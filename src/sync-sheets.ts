@@ -4,9 +4,11 @@ import { config, isConfigured } from "./config.ts";
 import { describeAccount, isoDate, simplifyBalances } from "./data.ts";
 import { eb, EnableBankingError } from "./enablebanking.ts";
 import { store } from "./store.ts";
+import { isVivaConfigured, listVivaWallets, VivaError } from "./viva.ts";
 
 export interface BalanceRow {
   date: string;
+  source: "enablebanking" | "viva";
   account: string;
   uid: string;
   iban?: string;
@@ -16,14 +18,9 @@ export interface BalanceRow {
   error?: string;
 }
 
-export async function fetchAllBalances(): Promise<{ rows: BalanceRow[] }> {
-  if (!isConfigured()) throw new Error("BankMCP is not configured yet.");
-
+async function fetchEnableBankingBalances(date: string): Promise<BalanceRow[]> {
   const s = store();
   const accounts = s.accounts();
-  if (!accounts.length) throw new Error("No accounts linked yet. Connect a bank first.");
-
-  const date = isoDate();
   const rows: BalanceRow[] = [];
   for (const account of accounts) {
     const base = describeAccount(account, s.data.sessions[account.session_id]);
@@ -31,6 +28,7 @@ export async function fetchAllBalances(): Promise<{ rows: BalanceRow[] }> {
       const balances = simplifyBalances(await eb.getBalances(account.uid));
       rows.push({
         date,
+        source: "enablebanking",
         account: base.label ?? base.name ?? account.uid,
         uid: account.uid,
         iban: account.iban,
@@ -42,6 +40,7 @@ export async function fetchAllBalances(): Promise<{ rows: BalanceRow[] }> {
       const msg = err instanceof EnableBankingError ? `${err.status}${err.consentGone ? " (consent expired)" : ""}` : (err as Error).message;
       rows.push({
         date,
+        source: "enablebanking",
         account: base.label ?? base.name ?? account.uid,
         uid: account.uid,
         iban: account.iban,
@@ -49,6 +48,40 @@ export async function fetchAllBalances(): Promise<{ rows: BalanceRow[] }> {
         error: msg,
       });
     }
+  }
+  return rows;
+}
+
+async function fetchVivaBalances(date: string): Promise<BalanceRow[]> {
+  if (!isVivaConfigured()) return [];
+  try {
+    const wallets = await listVivaWallets();
+    return wallets.map((wallet) => ({
+      date,
+      source: "viva" as const,
+      account: wallet.friendlyName ?? `Viva wallet ${wallet.walletId}`,
+      uid: `viva:${wallet.walletId}`,
+      iban: wallet.iban,
+      currency: wallet.currency,
+      booked: wallet.available,
+      available: wallet.available,
+    }));
+  } catch (err) {
+    const msg = err instanceof VivaError ? `${err.status}` : (err as Error).message;
+    return [{ date, source: "viva", account: "Viva", uid: "viva:error", currency: "EUR", error: msg }];
+  }
+}
+
+export async function fetchAllBalances(): Promise<{ rows: BalanceRow[] }> {
+  if (!isConfigured()) throw new Error("BankMCP is not configured yet.");
+
+  const date = isoDate();
+  const ebRows = await fetchEnableBankingBalances(date);
+  const vivaRows = await fetchVivaBalances(date);
+  const rows = [...ebRows, ...vivaRows];
+
+  if (!rows.length) {
+    throw new Error("No accounts linked yet. Connect a bank or set VIVA_MERCHANT_ID and VIVA_API_KEY.");
   }
 
   return { rows };

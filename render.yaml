@@ -22,6 +22,10 @@ services:
         generateValue: true
       - key: GOOGLE_SHEETS_WEBHOOK_URL
         sync: false
+      - key: VIVA_MERCHANT_ID
+        sync: false
+      - key: VIVA_API_KEY
+        sync: false
       - key: DEFAULT_COUNTRY
         value: GR
     disk:

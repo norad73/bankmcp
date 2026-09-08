@@ -81,6 +81,10 @@ export const config = {
   cronSecret: env.CRON_SECRET ?? "",
   /** Google Apps Script web app URL that appends balance rows to a sheet. */
   googleSheetsWebhookUrl: env.GOOGLE_SHEETS_WEBHOOK_URL ?? "",
+  /** Viva Wallet legacy API (Basic Auth). Use Merchant ID + API Key, or Account Transactions credentials. */
+  vivaApiBase: (env.VIVA_API_BASE ?? "https://www.vivapayments.com").replace(/\/+$/, ""),
+  vivaBasicUser: env.VIVA_MERCHANT_ID ?? env.VIVA_BASIC_USER ?? "",
+  vivaBasicPassword: env.VIVA_API_KEY ?? env.VIVA_BASIC_PASSWORD ?? "",
   // Hosts an OAuth client may send the sign-in back to. Stops a phishing link
   // from registering a client that redirects your authorization code elsewhere.
   // Defaults cover the well-known MCP clients; subdomains are included.

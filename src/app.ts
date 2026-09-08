@@ -142,15 +142,16 @@ export function createApp(opts: AppOptions) {
     if (!isConfigured()) return void res.status(503).type("html").send(failedPage("Finish setup first."));
     const bank = String(req.query.bank ?? "Eurobank");
     const country = String(req.query.country ?? config.country).toUpperCase();
+    const psuType = String(req.query.psu_type ?? req.query.customer_type ?? "personal").toLowerCase() === "business" ? "business" : "personal";
     try {
       const banks = await eb.listAspsps(country);
-      const aspsp = banks.find((b) => b.name.toLowerCase() === bank.toLowerCase()) ?? banks.find((b) => b.name === bank);
+      const aspsp = banks.find((b) => b.name === bank) ?? banks.find((b) => b.name.toLowerCase() === bank.toLowerCase());
       if (!aspsp) return void res.status(404).type("html").send(failedPage(`Bank "${bank}" not found in ${country}.`));
       const maxSeconds = Math.min(aspsp.maximum_consent_validity ?? 180 * 86_400, 180 * 86_400);
       const validUntil = new Date(Date.now() + maxSeconds * 1000 - 60_000);
       const state = randomUUID();
       store().addPendingAuth({ state, bank: { name: aspsp.name, country: aspsp.country }, started: new Date().toISOString() });
-      const auth = await eb.startAuthorization({ aspsp, state, redirectUrl: `${config.baseUrl}/callback`, validUntil, psuType: "personal" });
+      const auth = await eb.startAuthorization({ aspsp, state, redirectUrl: `${config.baseUrl}/callback`, validUntil, psuType });
       res.redirect(302, auth.url);
     } catch (err) {
       log("connect failed", (err as Error).message);
