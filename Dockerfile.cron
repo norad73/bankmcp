@@ -1,4 +1,3 @@
 FROM curlimages/curl:8.12.1
-COPY scripts/cron-trigger.sh /cron-trigger.sh
-RUN chmod +x /cron-trigger.sh
+COPY --chmod=755 scripts/cron-trigger.sh /cron-trigger.sh
 CMD ["/cron-trigger.sh"]
