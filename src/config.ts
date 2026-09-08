@@ -45,6 +45,7 @@ export function saveKeyFile(pem: string): void {
 /** Public URL guessed from the platform when BASE_URL is not set. */
 function detectBaseUrl(): string {
   if (env.BASE_URL) return env.BASE_URL.replace(/\/+$/, "");
+  if (env.RENDER_EXTERNAL_URL) return env.RENDER_EXTERNAL_URL.replace(/\/+$/, "");
   if (env.RAILWAY_PUBLIC_DOMAIN) return `https://${env.RAILWAY_PUBLIC_DOMAIN}`;
   if (env.FLY_APP_NAME) return `https://${env.FLY_APP_NAME}.fly.dev`;
   if (localMode) return `https://localhost:${port}`;
@@ -76,6 +77,10 @@ export const config = {
   },
   adminPassword: env.ADMIN_PASSWORD ?? "",
   notifyWebhookUrl: env.NOTIFY_WEBHOOK_URL ?? "",
+  /** Shared secret for POST /cron/sync-balances (Render cron has no disk access). */
+  cronSecret: env.CRON_SECRET ?? "",
+  /** Google Apps Script web app URL that appends balance rows to a sheet. */
+  googleSheetsWebhookUrl: env.GOOGLE_SHEETS_WEBHOOK_URL ?? "",
   // Hosts an OAuth client may send the sign-in back to. Stops a phishing link
   // from registering a client that redirects your authorization code elsewhere.
   // Defaults cover the well-known MCP clients; subdomains are included.

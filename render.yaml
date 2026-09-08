@@ -1,0 +1,47 @@
+# Render Blueprint: BankMCP web service + daily balance sync cron.
+# Deploy: render blueprint apply  (after render login)
+#
+# Cron jobs on Render cannot mount the persistent disk, so the cron service
+# only triggers POST /cron/sync-balances on the web service, which reads
+# bank consents from /data and pushes rows to Google Sheets.
+
+services:
+  - type: web
+    name: bankmcp
+    runtime: docker
+    plan: starter
+    healthCheckPath: /healthz
+    envVars:
+      - key: DATA_DIR
+        value: /data
+      - key: PORT
+        value: "8080"
+      - key: NODE_ENV
+        value: production
+      - key: CRON_SECRET
+        generateValue: true
+      - key: GOOGLE_SHEETS_WEBHOOK_URL
+        sync: false
+      - key: DEFAULT_COUNTRY
+        value: GR
+    disk:
+      name: bank-data
+      mountPath: /data
+      sizeGB: 1
+
+  - type: cron
+    name: bankmcp-sync-balances
+    runtime: docker
+    schedule: "0 6 * * *"
+    dockerfilePath: ./Dockerfile.cron
+    envVars:
+      - key: BANKMCP_HOST
+        fromService:
+          type: web
+          name: bankmcp
+          property: host
+      - key: CRON_SECRET
+        fromService:
+          type: web
+          name: bankmcp
+          envVarKey: CRON_SECRET

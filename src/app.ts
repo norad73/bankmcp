@@ -13,6 +13,7 @@ import { connectedPage, failedPage, loginPage, privacyPage, setupPage, signInFai
 import { applySetup, setupAvailable } from "./setup.ts";
 import { createServer, VERSION } from "./mcp.ts";
 import { startWatcher } from "./watcher.ts";
+import { syncBalancesToSheet } from "./sync-sheets.ts";
 
 export interface AppOptions {
   /** Mount the OAuth server and the /mcp endpoint. Off in local (stdio) mode. */
@@ -102,6 +103,21 @@ export function createApp(opts: AppOptions) {
   });
 
   app.get("/healthz", (_req, res) => void res.json({ ok: true, version: VERSION, configured: isConfigured() }));
+
+  if (opts.remote && config.cronSecret) {
+    app.post("/cron/sync-balances", async (req, res) => {
+      const auth = req.headers.authorization;
+      if (auth !== `Bearer ${config.cronSecret}`) return void res.status(401).json({ error: "unauthorized" });
+      try {
+        const result = await syncBalancesToSheet();
+        log(`sync-balances: ${result.rows.length} row(s) sent to Google Sheets`);
+        res.json({ ok: true, count: result.rows.length });
+      } catch (err) {
+        log("sync-balances failed", (err as Error).message);
+        res.status(500).json({ error: (err as Error).message });
+      }
+    });
+  }
 
   app.get("/privacy", (_req, res) => void res.type("html").send(privacyPage()));
   app.get("/terms", (_req, res) => void res.type("html").send(termsPage()));
