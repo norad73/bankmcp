@@ -85,6 +85,12 @@ export const config = {
   vivaApiBase: (env.VIVA_API_BASE ?? "https://www.vivapayments.com").replace(/\/+$/, ""),
   vivaBasicUser: env.VIVA_MERCHANT_ID ?? env.VIVA_BASIC_USER ?? "",
   vivaBasicPassword: env.VIVA_API_KEY ?? env.VIVA_BASIC_PASSWORD ?? "",
+  /** Airwallex API (scoped key). https://www.airwallex.com/docs/developer-tools/api/manage-api-keys */
+  airwallexApiBase: (env.AIRWALLEX_API_BASE ?? "https://api.airwallex.com").replace(/\/+$/, ""),
+  airwallexClientId: env.AIRWALLEX_CLIENT_ID ?? "",
+  airwallexApiKey: env.AIRWALLEX_API_KEY ?? "",
+  /** Optional account ID for scoped keys with multiple accounts (x-login-as). */
+  airwallexAccountId: env.AIRWALLEX_ACCOUNT_ID ?? "",
   // Hosts an OAuth client may send the sign-in back to. Stops a phishing link
   // from registering a client that redirects your authorization code elsewhere.
   // Defaults cover the well-known MCP clients; subdomains are included.

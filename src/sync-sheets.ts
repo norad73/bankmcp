@@ -4,11 +4,12 @@ import { config, isConfigured } from "./config.ts";
 import { describeAccount, isoDate, simplifyBalances } from "./data.ts";
 import { eb, EnableBankingError } from "./enablebanking.ts";
 import { store } from "./store.ts";
+import { isAirwallexConfigured, listAirwallexBalances, AirwallexError } from "./airwallex.ts";
 import { isVivaConfigured, listVivaWallets, VivaError } from "./viva.ts";
 
 export interface BalanceRow {
   date: string;
-  source: "enablebanking" | "viva";
+  source: "enablebanking" | "viva" | "airwallex";
   account: string;
   uid: string;
   iban?: string;
@@ -72,16 +73,36 @@ async function fetchVivaBalances(date: string): Promise<BalanceRow[]> {
   }
 }
 
+async function fetchAirwallexBalances(date: string): Promise<BalanceRow[]> {
+  if (!isAirwallexConfigured()) return [];
+  try {
+    const balances = await listAirwallexBalances();
+    return balances.map((b) => ({
+      date,
+      source: "airwallex" as const,
+      account: `Airwallex ${b.accountType}`,
+      uid: `airwallex:${b.accountType}:${b.currency}`,
+      currency: b.currency,
+      booked: b.available,
+      available: b.available,
+    }));
+  } catch (err) {
+    const msg = err instanceof AirwallexError ? `${err.status}` : (err as Error).message;
+    return [{ date, source: "airwallex", account: "Airwallex", uid: "airwallex:error", currency: "USD", error: msg }];
+  }
+}
+
 export async function fetchAllBalances(): Promise<{ rows: BalanceRow[] }> {
   if (!isConfigured()) throw new Error("BankMCP is not configured yet.");
 
   const date = isoDate();
   const ebRows = await fetchEnableBankingBalances(date);
   const vivaRows = await fetchVivaBalances(date);
-  const rows = [...ebRows, ...vivaRows];
+  const airwallexRows = await fetchAirwallexBalances(date);
+  const rows = [...ebRows, ...vivaRows, ...airwallexRows];
 
   if (!rows.length) {
-    throw new Error("No accounts linked yet. Connect a bank or set VIVA_MERCHANT_ID and VIVA_API_KEY.");
+    throw new Error("No accounts linked yet. Connect a bank or configure Viva/Airwallex API credentials.");
   }
 
   return { rows };

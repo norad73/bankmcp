@@ -26,6 +26,12 @@ services:
         sync: false
       - key: VIVA_API_KEY
         sync: false
+      - key: AIRWALLEX_CLIENT_ID
+        sync: false
+      - key: AIRWALLEX_API_KEY
+        sync: false
+      - key: AIRWALLEX_ACCOUNT_ID
+        sync: false
       - key: DEFAULT_COUNTRY
         value: GR
     disk:
