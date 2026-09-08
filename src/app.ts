@@ -1,6 +1,6 @@
 // HTTP entry point: the MCP endpoint behind OAuth, the OAuth server itself,
 // the Enable Banking redirect target, and a status page.
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import express from "express";
 import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/sdk/server/auth/router.js";
 import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
@@ -13,7 +13,8 @@ import { connectedPage, failedPage, loginPage, privacyPage, setupPage, signInFai
 import { applySetup, setupAvailable } from "./setup.ts";
 import { createServer, VERSION } from "./mcp.ts";
 import { startWatcher } from "./watcher.ts";
-import { syncBalancesToSheet } from "./sync-sheets.ts";
+import { fetchAllBalances, syncBalancesToSheet } from "./sync-sheets.ts";
+import { isoDate } from "./data.ts";
 
 export interface AppOptions {
   /** Mount the OAuth server and the /mcp endpoint. Off in local (stdio) mode. */
@@ -105,9 +106,27 @@ export function createApp(opts: AppOptions) {
   app.get("/healthz", (_req, res) => void res.json({ ok: true, version: VERSION, configured: isConfigured() }));
 
   if (opts.remote && config.cronSecret) {
+    const cronAuth = (req: express.Request, res: express.Response) => {
+      if (req.headers.authorization !== `Bearer ${config.cronSecret}`) {
+        res.status(401).json({ error: "unauthorized" });
+        return false;
+      }
+      return true;
+    };
+
+    app.get("/cron/balances", async (req, res) => {
+      if (!cronAuth(req, res)) return;
+      try {
+        const result = await fetchAllBalances();
+        res.json({ ok: true, as_of: isoDate(), accounts: result.rows });
+      } catch (err) {
+        log("balances failed", (err as Error).message);
+        res.status(500).json({ error: (err as Error).message });
+      }
+    });
+
     app.post("/cron/sync-balances", async (req, res) => {
-      const auth = req.headers.authorization;
-      if (auth !== `Bearer ${config.cronSecret}`) return void res.status(401).json({ error: "unauthorized" });
+      if (!cronAuth(req, res)) return;
       try {
         const result = await syncBalancesToSheet();
         log(`sync-balances: ${result.rows.length} row(s) sent to Google Sheets`);
@@ -118,6 +137,26 @@ export function createApp(opts: AppOptions) {
       }
     });
   }
+
+  app.get("/connect", async (req, res) => {
+    if (!isConfigured()) return void res.status(503).type("html").send(failedPage("Finish setup first."));
+    const bank = String(req.query.bank ?? "Eurobank");
+    const country = String(req.query.country ?? config.country).toUpperCase();
+    try {
+      const banks = await eb.listAspsps(country);
+      const aspsp = banks.find((b) => b.name.toLowerCase() === bank.toLowerCase()) ?? banks.find((b) => b.name === bank);
+      if (!aspsp) return void res.status(404).type("html").send(failedPage(`Bank "${bank}" not found in ${country}.`));
+      const maxSeconds = Math.min(aspsp.maximum_consent_validity ?? 180 * 86_400, 180 * 86_400);
+      const validUntil = new Date(Date.now() + maxSeconds * 1000 - 60_000);
+      const state = randomUUID();
+      store().addPendingAuth({ state, bank: { name: aspsp.name, country: aspsp.country }, started: new Date().toISOString() });
+      const auth = await eb.startAuthorization({ aspsp, state, redirectUrl: `${config.baseUrl}/callback`, validUntil, psuType: "personal" });
+      res.redirect(302, auth.url);
+    } catch (err) {
+      log("connect failed", (err as Error).message);
+      res.status(500).type("html").send(failedPage(err instanceof EnableBankingError ? `${err.status}: ${err.body.slice(0, 300)}` : (err as Error).message));
+    }
+  });
 
   app.get("/privacy", (_req, res) => void res.type("html").send(privacyPage()));
   app.get("/terms", (_req, res) => void res.type("html").send(termsPage()));

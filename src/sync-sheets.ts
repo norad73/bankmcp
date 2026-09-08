@@ -16,10 +16,8 @@ export interface BalanceRow {
   error?: string;
 }
 
-export async function syncBalancesToSheet(): Promise<{ rows: BalanceRow[] }> {
+export async function fetchAllBalances(): Promise<{ rows: BalanceRow[] }> {
   if (!isConfigured()) throw new Error("BankMCP is not configured yet.");
-  const url = config.googleSheetsWebhookUrl;
-  if (!url) throw new Error("Set GOOGLE_SHEETS_WEBHOOK_URL to your Google Apps Script web app URL.");
 
   const s = store();
   const accounts = s.accounts();
@@ -52,6 +50,15 @@ export async function syncBalancesToSheet(): Promise<{ rows: BalanceRow[] }> {
       });
     }
   }
+
+  return { rows };
+}
+
+export async function syncBalancesToSheet(): Promise<{ rows: BalanceRow[] }> {
+  const url = config.googleSheetsWebhookUrl;
+  if (!url) throw new Error("Set GOOGLE_SHEETS_WEBHOOK_URL to your Google Apps Script web app URL.");
+
+  const { rows } = await fetchAllBalances();
 
   const res = await fetch(url, {
     method: "POST",
