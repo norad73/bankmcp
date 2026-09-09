@@ -204,8 +204,19 @@ async function fetchEnableBankingBalances(date: string, opts: FetchBalanceOpts):
     }
 
     if (!accountUids.length) {
-      ebLog("fetch.noAccounts", { sessionId: session.id, label: bank });
-      rows.push({ date, source: "enablebanking", bank, account: bank, uid: `session:${session.id}:empty`, currency: "EUR", error: "No accounts returned by bank" });
+      const emptyUid = `session:${session.id}:empty`;
+      const base: RowBase = { source: "enablebanking", bank, account: bank, currency: "EUR" };
+      const cached = getCachedBalance(emptyUid, date);
+      ebLog("fetch.noAccounts", { sessionId: session.id, label: bank, cached: !!cached });
+      if (!shouldFetch(emptyUid, date, opts) && cached) {
+        rows.push(rowFromCache(date, emptyUid, base, cached));
+        continue;
+      }
+      if (cached) {
+        rows.push(rowFromCache(date, emptyUid, base, cached));
+        continue;
+      }
+      rows.push({ date, ...base, uid: emptyUid, error: "No accounts returned by bank" });
       continue;
     }
 

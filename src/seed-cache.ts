@@ -1,11 +1,20 @@
-import { clearCachedBalance, getCachedBalance, seedBalanceCache, type SeedBalanceCacheInput, type SeedBalanceCacheResult } from "./balance-cache.ts";
-import { accountDisplayName, sessionName } from "./data.ts";
+import { clearCachedBalance, getCachedBalance, seedBalanceCache, setCachedBalance, type SeedBalanceCacheInput, type SeedBalanceCacheResult } from "./balance-cache.ts";
+import { accountDisplayName, athensDate, sessionName } from "./data.ts";
 import { store } from "./store.ts";
 
+export function emptySessionUid(sessionId: string): string {
+  return `session:${sessionId}:empty`;
+}
+
+export function sessionsForLabel(label: string) {
+  const needle = label.trim().toLowerCase();
+  return store().sessions().filter((session) => sessionName(session).toLowerCase() === needle);
+}
+
 export function accountsForSessionLabel(label: string) {
-  const s = store();
-  const sessions = s.sessions().filter((session) => sessionName(session).toLowerCase() === label.trim().toLowerCase());
+  const sessions = sessionsForLabel(label);
   if (!sessions.length) throw new Error(`No session labeled "${label}"`);
+  const s = store();
   return sessions.flatMap((session) =>
     s.accounts()
       .filter((account) => account.session_id === session.id)
@@ -18,7 +27,21 @@ export function accountsForSessionLabel(label: string) {
 }
 
 export function seedBalanceCacheForLabel(input: SeedBalanceCacheInput): SeedBalanceCacheResult[] {
-  return seedBalanceCache(() => accountsForSessionLabel(input.sessionLabel), input);
+  const accounts = accountsForSessionLabel(input.sessionLabel);
+  if (accounts.length) return seedBalanceCache(() => accounts, input);
+
+  const sessions = sessionsForLabel(input.sessionLabel);
+  const session = sessions[0]!;
+  const uid = emptySessionUid(session.id);
+  const date = input.date ?? athensDate();
+  const currency = input.currency ?? "EUR";
+  setCachedBalance(uid, {
+    date,
+    booked: input.booked ?? input.available,
+    available: input.available,
+    currency,
+  });
+  return [{ accountUid: uid, account: input.sessionLabel }];
 }
 
 export function clearBalanceCacheForLabel(label: string, account?: string, accountUid?: string): SeedBalanceCacheResult[] {
@@ -57,5 +80,19 @@ export function fixEurobankIkeBalanceCache(amount = 9844.24): void {
     }
   } catch (err) {
     console.log(`[bank] Eurobank IKE cache fix skipped: ${(err as Error).message}`);
+  }
+}
+
+/** Seed today's balance for Eurobank USA Branch when the bank returns no account UIDs. */
+export function fixEurobankUsaBranchBalanceCache(amount = 1494.3): void {
+  const label = "Eurobank USA Branch";
+  try {
+    const uid = sessionsForLabel(label).map((session) => emptySessionUid(session.id))[0];
+    if (!uid) return;
+    if (getCachedBalance(uid)?.available === amount) return;
+    seedBalanceCacheForLabel({ sessionLabel: label, available: amount, booked: amount, currency: "EUR" });
+    console.log(`[bank] cached ${amount} EUR on ${label}`);
+  } catch (err) {
+    console.log(`[bank] Eurobank USA Branch cache fix skipped: ${(err as Error).message}`);
   }
 }
