@@ -21,38 +21,45 @@ export interface BalanceRow {
   error?: string;
 }
 
+const SOURCE_TIMEOUT_MS = 20_000;
+
+async function withTimeout<T>(label: string, work: Promise<T>, ms = SOURCE_TIMEOUT_MS): Promise<T> {
+  return Promise.race([
+    work,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`${label} timed out`)), ms)),
+  ]);
+}
+
 async function fetchEnableBankingBalances(date: string): Promise<BalanceRow[]> {
   const s = store();
   const accounts = s.accounts();
-  const rows: BalanceRow[] = [];
-  for (const account of accounts) {
+  return Promise.all(accounts.map(async (account) => {
     const base = describeAccount(account, s.data.sessions[account.session_id]);
     try {
-      const balances = simplifyBalances(await eb.getBalances(account.uid));
-      rows.push({
+      const balances = simplifyBalances(await withTimeout(`Enable Banking ${base.label ?? account.uid}`, eb.getBalances(account.uid), 15_000));
+      return {
         date,
-        source: "enablebanking",
+        source: "enablebanking" as const,
         account: base.label ?? base.name ?? account.uid,
         uid: account.uid,
         iban: account.iban,
         currency: account.currency,
         booked: balances.booked,
         available: balances.available,
-      });
+      };
     } catch (err) {
       const msg = err instanceof EnableBankingError ? `${err.status}${err.consentGone ? " (consent expired)" : ""}` : (err as Error).message;
-      rows.push({
+      return {
         date,
-        source: "enablebanking",
+        source: "enablebanking" as const,
         account: base.label ?? base.name ?? account.uid,
         uid: account.uid,
         iban: account.iban,
         currency: account.currency,
         error: msg,
-      });
+      };
     }
-  }
-  return rows;
+  }));
 }
 
 async function fetchVivaBalances(date: string): Promise<BalanceRow[]> {
@@ -155,15 +162,25 @@ async function fetchPayPalBalances(date: string): Promise<BalanceRow[]> {
   }
 }
 
+async function fetchSource(label: string, source: BalanceRow["source"], currency: string, work: Promise<BalanceRow[]>): Promise<BalanceRow[]> {
+  try {
+    return await withTimeout(label, work);
+  } catch (err) {
+    return [{ date: isoDate(), source, account: label, uid: `${source}:timeout`, currency, error: (err as Error).message }];
+  }
+}
+
 export async function fetchAllBalances(): Promise<{ rows: BalanceRow[] }> {
   if (!isConfigured()) throw new Error("BankMCP is not configured yet.");
 
   const date = isoDate();
-  const ebRows = await fetchEnableBankingBalances(date);
-  const vivaRows = await fetchVivaBalances(date);
-  const airwallexRows = await fetchAirwallexBalances(date);
-  const stripeRows = await fetchStripeBalances(date);
-  const paypalRows = await fetchPayPalBalances(date);
+  const [ebRows, vivaRows, airwallexRows, stripeRows, paypalRows] = await Promise.all([
+    fetchSource("Enable Banking", "enablebanking", "EUR", fetchEnableBankingBalances(date)),
+    fetchSource("Viva", "viva", "EUR", fetchVivaBalances(date)),
+    fetchSource("Airwallex", "airwallex", "USD", fetchAirwallexBalances(date)),
+    fetchSource("Stripe", "stripe", "USD", fetchStripeBalances(date)),
+    fetchSource("PayPal", "paypal", "USD", fetchPayPalBalances(date)),
+  ]);
   const rows = [...ebRows, ...vivaRows, ...airwallexRows, ...stripeRows, ...paypalRows];
 
   if (!rows.length) {

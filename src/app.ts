@@ -146,7 +146,10 @@ export function createApp(opts: AppOptions) {
     if (!balancesAuthed(req)) return void res.type("html").send(balancesLoginPage());
     if (!isConfigured()) return void res.type("html").send(balancesPage({ asOf: isoDate(), fetchedAt: new Date().toISOString(), rows: [], error: "BankMCP is not configured yet." }));
     try {
-      const result = await fetchAllBalances();
+      const [result, fx] = await Promise.all([
+        fetchAllBalances(),
+        fetchRatesToUsd(["EUR", "USD", "GBP"]),
+      ]);
       const rows = result.rows.map((r) => ({
         source: r.source,
         account: r.account,
@@ -155,7 +158,6 @@ export function createApp(opts: AppOptions) {
         available: r.available,
         error: r.error,
       }));
-      const fx = await fetchRatesToUsd(rows.map((r) => r.currency));
       res.type("html").send(balancesPage({
         asOf: isoDate(),
         fetchedAt: new Date().toISOString(),
