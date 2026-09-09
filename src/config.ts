@@ -3,14 +3,9 @@
 // setup page stores the application id, the key file and the password hash.
 import { accessSync, constants, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { homedir } from "node:os";
-
 const env = process.env;
-// Local mode: the server is launched by an MCP client on the user's own
-// machine over stdio. No OAuth, no admin password; state lives in ~/.bankmcp.
-const localMode = env.BANKMCP_LOCAL === "1";
 const port = Number(env.PORT ?? 8080);
-const dataDir = env.DATA_DIR ?? (localMode ? join(homedir(), ".bankmcp") : "./data");
+const dataDir = env.DATA_DIR ?? "./data";
 
 export interface Settings {
   app_id?: string;
@@ -48,12 +43,10 @@ function detectBaseUrl(): string {
   if (env.RENDER_EXTERNAL_URL) return env.RENDER_EXTERNAL_URL.replace(/\/+$/, "");
   if (env.RAILWAY_PUBLIC_DOMAIN) return `https://${env.RAILWAY_PUBLIC_DOMAIN}`;
   if (env.FLY_APP_NAME) return `https://${env.FLY_APP_NAME}.fly.dev`;
-  if (localMode) return `https://localhost:${port}`;
   return `http://localhost:${port}`;
 }
 
 export const config = {
-  localMode,
   get appId(): string {
     return env.EB_APP_ID ?? settings.app_id ?? "";
   },
@@ -71,7 +64,7 @@ export const config = {
   port,
   baseUrl: detectBaseUrl(),
   dataDir,
-  appName: env.APP_NAME ?? "BankMCP™",
+  appName: env.APP_NAME ?? "BankConnector",
   get adminPasswordHash(): string {
     return env.ADMIN_PASSWORD_HASH ?? settings.admin_password_hash ?? "";
   },
@@ -98,23 +91,11 @@ export const config = {
   paypalApiBase: (env.PAYPAL_API_BASE ?? "https://api-m.paypal.com").replace(/\/+$/, ""),
   paypalClientId: env.PAYPAL_CLIENT_ID ?? "",
   paypalSecret: env.PAYPAL_SECRET ?? "",
-  // Hosts an OAuth client may send the sign-in back to. Stops a phishing link
-  // from registering a client that redirects your authorization code elsewhere.
-  // Defaults cover the well-known MCP clients; subdomains are included.
-  allowedRedirectHosts: (env.ALLOWED_REDIRECT_HOSTS ?? "claude.ai,claude.com,chatgpt.com,openai.com,mistral.ai,cursor.com,cursor.sh,vscode.dev,localhost,127.0.0.1")
-    .split(",")
-    .map((h) => h.trim().toLowerCase())
-    .filter(Boolean),
-  // Optional: terminate TLS in the process itself (for running on your own
-  // machine). Hosted deployments normally get TLS from the platform.
   tlsCertPath: env.TLS_CERT_PATH ?? "",
   tlsKeyPath: env.TLS_KEY_PATH ?? "",
-  // Unattended polling for watches: PSD2 allows at most four account accesses
-  // per day without the account holder present.
-  pollIntervalHours: Number(env.POLL_INTERVAL_HOURS ?? 6),
   /** True when every secret came from the environment, so the setup page has nothing to do. */
   get lockedByEnv(): boolean {
-    return Boolean(env.EB_APP_ID && (env.EB_PRIVATE_KEY || env.EB_PRIVATE_KEY_PATH) && (localMode || env.ADMIN_PASSWORD_HASH || env.ADMIN_PASSWORD));
+    return Boolean(env.EB_APP_ID && (env.EB_PRIVATE_KEY || env.EB_PRIVATE_KEY_PATH) && (env.ADMIN_PASSWORD_HASH || env.ADMIN_PASSWORD));
   },
 };
 
@@ -139,7 +120,7 @@ export function setupProblems(): string[] {
       problems.push(`Cannot read private key: ${(err as Error).message}`);
     }
   }
-  if (!localMode && !config.adminPasswordHash && !config.adminPassword) problems.push("Admin password is not set");
+  if (!config.adminPasswordHash && !config.adminPassword) problems.push("Admin password is not set");
   if (!/^https?:\/\//.test(config.baseUrl)) problems.push("BASE_URL must start with http:// or https://");
   try {
     mkdirSync(config.dataDir, { recursive: true });

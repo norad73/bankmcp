@@ -1,7 +1,7 @@
 services:
   bank:
     build: .
-    image: bank-mcp
+    image: bankconnector
     restart: unless-stopped
     env_file: .env
     environment:

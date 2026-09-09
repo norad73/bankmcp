@@ -171,7 +171,7 @@ async function fetchSource(label: string, source: BalanceRow["source"], currency
 }
 
 export async function fetchAllBalances(): Promise<{ rows: BalanceRow[] }> {
-  if (!isConfigured()) throw new Error("BankMCP is not configured yet.");
+  if (!isConfigured()) throw new Error("BankConnector is not configured yet.");
 
   const date = isoDate();
   const [ebRows, vivaRows, airwallexRows, stripeRows, paypalRows] = await Promise.all([
@@ -199,7 +199,7 @@ export async function syncBalancesToSheet(): Promise<{ rows: BalanceRow[] }> {
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ source: "bankmcp", synced_at: new Date().toISOString(), rows }),
+    body: JSON.stringify({ source: "bankconnector", synced_at: new Date().toISOString(), rows }),
   });
   const text = await res.text();
   if (!res.ok) throw new Error(`Google Sheets webhook ${res.status}: ${text.slice(0, 300)}`);

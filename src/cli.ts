@@ -1,14 +1,12 @@
 // Helpers for setting up and checking a deployment:
 //   node src/cli.ts hash-password       → value for ADMIN_PASSWORD_HASH
 //   node src/cli.ts check               → verifies config and the Enable Banking application
-//   node src/cli.ts watch [--force]     → runs all watches once and prints what fired
 import { createInterface } from "node:readline";
 import { config, setupProblems } from "./config.ts";
 import { eb, EnableBankingError } from "./enablebanking.ts";
 import { hashPassword } from "./auth.ts";
 import { store } from "./store.ts";
 import { daysLeft } from "./data.ts";
-import { runWatches } from "./watcher.ts";
 
 const [command, ...args] = process.argv.slice(2);
 
@@ -79,14 +77,10 @@ switch (command) {
     console.log(`Store: ${s.path}`);
     for (const x of s.sessions()) console.log(`  ${x.bank.name}: ${s.accounts().filter((a) => a.session_id === x.id).length} account(s), consent ${daysLeft(x.valid_until)} days left`);
     if (!s.sessions().length) console.log("  no banks connected yet");
-    console.log(`Watches: ${s.watches().length}, webhook ${config.notifyWebhookUrl ? "configured" : "not set"}`);
-    break;
-  }
-  case "watch": {
-    console.log(JSON.stringify(await runWatches({ force: args.includes("--force") }), null, 2));
+    console.log(`Google Sheets webhook: ${config.googleSheetsWebhookUrl ? "configured" : "not set"}`);
     break;
   }
   default:
-    console.log("Usage: node src/cli.ts <hash-password [password] | check | watch [--force]>");
+    console.log("Usage: node src/cli.ts <hash-password [password] | check>");
     process.exit(command ? 1 : 0);
 }

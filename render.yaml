@@ -1,4 +1,4 @@
-# Render Blueprint: BankMCP web service + daily balance sync cron.
+# Render Blueprint: BankConnector web service + daily balance sync cron.
 # Deploy: render blueprint apply  (after render login)
 #
 # Cron jobs on Render cannot mount the persistent disk, so the cron service
@@ -7,7 +7,7 @@
 
 services:
   - type: web
-    name: bankmcp
+    name: bankconnector
     runtime: docker
     plan: starter
     healthCheckPath: /healthz
@@ -46,18 +46,18 @@ services:
       sizeGB: 1
 
   - type: cron
-    name: bankmcp-sync-balances
+    name: bankconnector-sync-balances
     runtime: docker
     schedule: "0 6 * * *"
     dockerfilePath: ./Dockerfile.cron
     envVars:
-      - key: BANKMCP_HOST
+      - key: BANKCONNECTOR_HOST
         fromService:
           type: web
-          name: bankmcp
+          name: bankconnector
           property: host
       - key: CRON_SECRET
         fromService:
           type: web
-          name: bankmcp
+          name: bankconnector
           envVarKey: CRON_SECRET

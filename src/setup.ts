@@ -1,6 +1,4 @@
-// First-run setup: takes the application id, the key file and a password,
-// validates them and stores them in the data directory. Only reachable while
-// the server has no working configuration.
+// First-run setup: stores Enable Banking credentials and admin password.
 import { createPrivateKey } from "node:crypto";
 import { config, looksLikeUuid, saveKeyFile, saveSettings } from "./config.ts";
 import { hashPassword } from "./auth.ts";
@@ -15,7 +13,7 @@ export interface SetupInput {
 }
 
 export function setupAvailable(): boolean {
-  const hasPassword = config.localMode || Boolean(config.adminPasswordHash || config.adminPassword);
+  const hasPassword = Boolean(config.adminPasswordHash || config.adminPassword);
   return !config.lockedByEnv && !(config.appId && (config.privateKey || config.privateKeyPath) && hasPassword);
 }
 
@@ -33,14 +31,12 @@ export function applySetup(input: SetupInput): string | null {
   } catch {
     return "The key file could not be read as a private key.";
   }
-  if (!config.localMode) {
-    if (password.length < 12) return "Use a password of at least 12 characters. It is the only thing between the internet and your accounts.";
-    if (password !== input.password2) return "The two passwords do not match.";
-  }
-  if (country && !/^[A-Z]{2}$/.test(country)) return "Country should be a two-letter code such as DK.";
+  if (password.length < 12) return "Use a password of at least 12 characters.";
+  if (password !== input.password2) return "The two passwords do not match.";
+  if (country && !/^[A-Z]{2}$/.test(country)) return "Country should be a two-letter code such as GR.";
 
   saveKeyFile(pem);
-  saveSettings({ app_id: appId, admin_password_hash: config.localMode ? undefined : hashPassword(password), country: country || undefined, setup_completed: new Date().toISOString() });
+  saveSettings({ app_id: appId, admin_password_hash: hashPassword(password), country: country || undefined, setup_completed: new Date().toISOString() });
   resetKeyCache();
   return null;
 }
