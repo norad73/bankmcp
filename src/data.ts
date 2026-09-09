@@ -4,6 +4,10 @@
 import type { Balance, Transaction } from "./enablebanking.ts";
 import type { StoredAccount, StoredSession } from "./store.ts";
 
+export function sessionName(session: StoredSession): string {
+  return session.label ?? session.bank.name;
+}
+
 export interface SimpleTransaction {
   id: string;
   date: string;

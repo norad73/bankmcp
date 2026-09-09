@@ -75,7 +75,7 @@ switch (command) {
     }
     const s = store();
     console.log(`Store: ${s.path}`);
-    for (const x of s.sessions()) console.log(`  ${x.bank.name}: ${s.accounts().filter((a) => a.session_id === x.id).length} account(s), consent ${daysLeft(x.valid_until)} days left`);
+    for (const x of s.sessions()) console.log(`  ${x.label ?? x.bank.name}: ${s.accounts().filter((a) => a.session_id === x.id).length} account(s), consent ${daysLeft(x.valid_until)} days left`);
     if (!s.sessions().length) console.log("  no banks connected yet");
     console.log(`Google Sheets webhook: ${config.googleSheetsWebhookUrl ? "configured" : "not set"}`);
     break;

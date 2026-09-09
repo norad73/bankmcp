@@ -1,7 +1,7 @@
 // Fetches booked balances for every linked account and POSTs them to a Google
 // Apps Script web app. Invoked by POST /cron/sync-balances or `npm run sync-sheets`.
 import { config, isConfigured } from "./config.ts";
-import { daysLeft, describeAccount, isoDate, simplifyBalances } from "./data.ts";
+import { daysLeft, describeAccount, isoDate, sessionName, simplifyBalances } from "./data.ts";
 import { eb, EnableBankingError } from "./enablebanking.ts";
 import { store } from "./store.ts";
 import { isAirwallexConfigured, listAirwallexBalances, AirwallexError } from "./airwallex.ts";
@@ -97,7 +97,7 @@ async function fetchEnableBankingBalances(date: string): Promise<BalanceRow[]> {
   const seenUids = new Set<string>();
 
   for (const session of sessions) {
-    const bank = session.bank.name;
+    const bank = sessionName(session);
 
     if (daysLeft(session.valid_until) < 0) {
       rows.push({
@@ -151,7 +151,7 @@ async function fetchEnableBankingBalances(date: string): Promise<BalanceRow[]> {
   for (const account of s.accounts()) {
     if (seenUids.has(account.uid)) continue;
     const session = s.data.sessions[account.session_id];
-    rows.push(await fetchEnableBankingAccountRow(date, account.uid, session?.bank.name ?? "Enable Banking", account.session_id));
+    rows.push(await fetchEnableBankingAccountRow(date, account.uid, session ? sessionName(session) : "Enable Banking", account.session_id));
   }
 
   return rows;

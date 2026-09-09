@@ -6,6 +6,8 @@ import { config } from "./config.ts";
 export interface StoredSession {
   id: string;
   bank: { name: string; country: string };
+  /** User label when the same bank is linked more than once (e.g. Eurobank IKE). */
+  label?: string;
   psu_type: string;
   valid_until: string;
   created: string;
@@ -30,6 +32,7 @@ export interface StoredAccount {
 export interface PendingAuth {
   state: string;
   bank: { name: string; country: string };
+  label?: string;
   started: string;
 }
 
@@ -87,11 +90,13 @@ export class Store {
     return result;
   }
 
-  addSession(session: { session_id: string; aspsp: { name: string; country: string }; psu_type: string; access: { valid_until: string }; accounts: Array<{ uid: string; name?: string; product?: string; currency: string; cash_account_type?: string; identification_hash: string; account_id?: { iban?: string; other?: { identification?: string } } }> }): void {
+  addSession(session: { session_id: string; aspsp: { name: string; country: string }; psu_type: string; access: { valid_until: string }; accounts: Array<{ uid: string; name?: string; product?: string; currency: string; cash_account_type?: string; identification_hash: string; account_id?: { iban?: string; other?: { identification?: string } } }> }, opts: { label?: string } = {}): void {
+    const sessionLabel = opts.label?.trim() || undefined;
     this.update((d) => {
       d.sessions[session.session_id] = {
         id: session.session_id,
         bank: { name: session.aspsp.name, country: session.aspsp.country },
+        label: sessionLabel,
         psu_type: session.psu_type,
         valid_until: session.access.valid_until,
         created: new Date().toISOString(),

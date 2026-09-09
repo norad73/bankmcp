@@ -183,6 +183,7 @@ export function createApp() {
     const bank = String(req.query.bank ?? "Eurobank");
     const country = String(req.query.country ?? config.country).toUpperCase();
     const psuType = String(req.query.psu_type ?? req.query.customer_type ?? "personal").toLowerCase() === "business" ? "business" : "personal";
+    const label = String(req.query.label ?? "").trim() || undefined;
     try {
       const banks = await eb.listAspsps(country);
       const aspsp = banks.find((b) => b.name === bank) ?? banks.find((b) => b.name.toLowerCase() === bank.toLowerCase());
@@ -190,7 +191,7 @@ export function createApp() {
       const maxSeconds = Math.min(aspsp.maximum_consent_validity ?? 180 * 86_400, 180 * 86_400);
       const validUntil = new Date(Date.now() + maxSeconds * 1000 - 60_000);
       const state = randomUUID();
-      store().addPendingAuth({ state, bank: { name: aspsp.name, country: aspsp.country }, started: new Date().toISOString() });
+      store().addPendingAuth({ state, bank: { name: aspsp.name, country: aspsp.country }, label, started: new Date().toISOString() });
       const auth = await eb.startAuthorization({ aspsp, state, redirectUrl: `${config.baseUrl}/callback`, validUntil, psuType });
       res.redirect(302, auth.url);
     } catch (err) {
@@ -212,9 +213,9 @@ export function createApp() {
 
     try {
       const session = await eb.createSession(code);
-      store().addSession(session);
-      log(`bank connected: ${session.aspsp.name}, ${session.accounts.length} account(s)`);
-      res.type("html").send(connectedPage(session));
+      store().addSession(session, { label: pending.label });
+      log(`bank connected: ${pending.label ?? session.aspsp.name}, ${session.accounts.length} account(s)`);
+      res.type("html").send(connectedPage(session, pending.label));
     } catch (err) {
       const msg = err instanceof EnableBankingError ? `Enable Banking returned ${err.status}: ${err.body.slice(0, 300)}` : (err as Error).message;
       log("callback failed", msg);
