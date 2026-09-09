@@ -126,7 +126,7 @@ export function createApp() {
       const rows = result.rows
         .filter((r) => r.source !== "airwallex" || ["USD", "EUR"].includes(r.currency.toUpperCase()))
         .map((r) => ({
-          source: r.source,
+          source: r.bank ?? r.source,
           account: r.account,
           currency: r.currency,
           booked: r.booked,

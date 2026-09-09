@@ -1,7 +1,7 @@
 // Fetches booked balances for every linked account and POSTs them to a Google
 // Apps Script web app. Invoked by POST /cron/sync-balances or `npm run sync-sheets`.
 import { config, isConfigured } from "./config.ts";
-import { describeAccount, isoDate, simplifyBalances } from "./data.ts";
+import { daysLeft, describeAccount, isoDate, simplifyBalances } from "./data.ts";
 import { eb, EnableBankingError } from "./enablebanking.ts";
 import { store } from "./store.ts";
 import { isAirwallexConfigured, listAirwallexBalances, AirwallexError } from "./airwallex.ts";
@@ -12,6 +12,8 @@ import { isVivaConfigured, listVivaWallets, VivaError } from "./viva.ts";
 export interface BalanceRow {
   date: string;
   source: "enablebanking" | "viva" | "airwallex" | "stripe" | "paypal";
+  /** Bank name for Enable Banking rows (Eurobank, Wise, …). */
+  bank?: string;
   account: string;
   uid: string;
   iban?: string;
@@ -30,36 +32,129 @@ async function withTimeout<T>(label: string, work: Promise<T>, ms = SOURCE_TIMEO
   ]);
 }
 
+function ebErrorMessage(err: unknown): string {
+  if (err instanceof EnableBankingError) {
+    const detail = err.body.slice(0, 120).replace(/\s+/g, " ").trim();
+    return `${err.status}${err.consentGone ? " (consent expired)" : ""}${detail ? `: ${detail}` : ""}`;
+  }
+  return (err as Error).message;
+}
+
+async function fetchEnableBankingAccountRow(date: string, accountUid: string, bank: string, sessionId: string): Promise<BalanceRow> {
+  const s = store();
+  const stored = s.account(accountUid);
+  const session = s.data.sessions[sessionId];
+  const base = stored ? describeAccount(stored, session) : undefined;
+  const account = base?.label ?? base?.name ?? stored?.product ?? accountUid;
+  const consentExpired = session && daysLeft(session.valid_until) < 0;
+
+  if (consentExpired) {
+    return {
+      date,
+      source: "enablebanking",
+      bank,
+      account,
+      uid: accountUid,
+      iban: stored?.iban,
+      currency: stored?.currency ?? "EUR",
+      error: "Consent expired — reconnect via /connect",
+    };
+  }
+
+  try {
+    const balances = simplifyBalances(await withTimeout(`Enable Banking ${bank} ${account}`, eb.getBalances(accountUid), 15_000));
+    return {
+      date,
+      source: "enablebanking",
+      bank,
+      account,
+      uid: accountUid,
+      iban: stored?.iban,
+      currency: stored?.currency ?? balances.currency ?? "EUR",
+      booked: balances.booked,
+      available: balances.available,
+    };
+  } catch (err) {
+    return {
+      date,
+      source: "enablebanking",
+      bank,
+      account,
+      uid: accountUid,
+      iban: stored?.iban,
+      currency: stored?.currency ?? "EUR",
+      error: ebErrorMessage(err),
+    };
+  }
+}
+
 async function fetchEnableBankingBalances(date: string): Promise<BalanceRow[]> {
   const s = store();
-  const accounts = s.accounts();
-  return Promise.all(accounts.map(async (account) => {
-    const base = describeAccount(account, s.data.sessions[account.session_id]);
-    try {
-      const balances = simplifyBalances(await withTimeout(`Enable Banking ${base.label ?? account.uid}`, eb.getBalances(account.uid), 15_000));
-      return {
+  const sessions = s.sessions();
+  if (!sessions.length) return [];
+
+  const rows: BalanceRow[] = [];
+  const seenUids = new Set<string>();
+
+  for (const session of sessions) {
+    const bank = session.bank.name;
+
+    if (daysLeft(session.valid_until) < 0) {
+      rows.push({
         date,
-        source: "enablebanking" as const,
-        account: base.label ?? base.name ?? account.uid,
-        uid: account.uid,
-        iban: account.iban,
-        currency: account.currency,
-        booked: balances.booked,
-        available: balances.available,
-      };
-    } catch (err) {
-      const msg = err instanceof EnableBankingError ? `${err.status}${err.consentGone ? " (consent expired)" : ""}` : (err as Error).message;
-      return {
-        date,
-        source: "enablebanking" as const,
-        account: base.label ?? base.name ?? account.uid,
-        uid: account.uid,
-        iban: account.iban,
-        currency: account.currency,
-        error: msg,
-      };
+        source: "enablebanking",
+        bank,
+        account: bank,
+        uid: `session:${session.id}`,
+        currency: "EUR",
+        error: "Consent expired — reconnect via /connect",
+      });
+      continue;
     }
-  }));
+
+    let accountUids: string[] = [];
+    try {
+      const status = await withTimeout(`Enable Banking ${bank} session`, eb.getSession(session.id), 15_000);
+      accountUids = status.accounts ?? [];
+    } catch (err) {
+      rows.push({
+        date,
+        source: "enablebanking",
+        bank,
+        account: bank,
+        uid: `session:${session.id}`,
+        currency: "EUR",
+        error: ebErrorMessage(err),
+      });
+      continue;
+    }
+
+    if (!accountUids.length) {
+      rows.push({
+        date,
+        source: "enablebanking",
+        bank,
+        account: bank,
+        uid: `session:${session.id}:empty`,
+        currency: "EUR",
+        error: "No accounts returned by bank",
+      });
+      continue;
+    }
+
+    for (const uid of accountUids) {
+      seenUids.add(uid);
+      rows.push(await fetchEnableBankingAccountRow(date, uid, bank, session.id));
+    }
+  }
+
+  for (const account of s.accounts()) {
+    if (seenUids.has(account.uid)) continue;
+    const session = s.data.sessions[account.session_id];
+    rows.push(await fetchEnableBankingAccountRow(date, account.uid, session?.bank.name ?? "Enable Banking", account.session_id));
+  }
+
+  return rows;
 }
 
 async function fetchVivaBalances(date: string): Promise<BalanceRow[]> {
