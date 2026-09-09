@@ -1,7 +1,8 @@
 // Fetches booked balances for every linked account and POSTs them to a Google
 // Apps Script web app. Invoked by POST /cron/sync-balances or `npm run sync-sheets`.
 import { config, isConfigured } from "./config.ts";
-import { daysLeft, describeAccount, isoDate, sessionName, simplifyBalances } from "./data.ts";
+import { accountDisplayName, daysLeft, isoDate, sessionName, simplifyBalances } from "./data.ts";
+import type { StoredAccount } from "./store.ts";
 import { eb, EnableBankingError } from "./enablebanking.ts";
 import { store } from "./store.ts";
 import { isAirwallexConfigured, listAirwallexBalances, AirwallexError } from "./airwallex.ts";
@@ -40,12 +41,41 @@ function ebErrorMessage(err: unknown): string {
   return (err as Error).message;
 }
 
+async function ensureStoredAccount(accountUid: string, sessionId: string): Promise<StoredAccount | undefined> {
+  const s = store();
+  let stored = s.account(accountUid);
+  if (stored && accountDisplayName(stored) !== accountUid) return stored;
+
+  try {
+    const details = await eb.getAccount(accountUid);
+    s.update((d) => {
+      const existing = d.accounts[accountUid];
+      d.accounts[accountUid] = {
+        uid: accountUid,
+        session_id: sessionId,
+        name: details.name ?? existing?.name,
+        product: details.product ?? existing?.product,
+        iban: details.account_id?.iban ?? existing?.iban,
+        other_id: details.account_id?.other?.identification ?? existing?.other_id,
+        currency: details.currency ?? existing?.currency ?? "EUR",
+        cash_account_type: details.cash_account_type ?? existing?.cash_account_type,
+        identification_hash: details.identification_hash ?? existing?.identification_hash ?? accountUid,
+        label: existing?.label,
+        last_polled: existing?.last_polled,
+      };
+    });
+    stored = s.account(accountUid);
+  } catch {
+    return stored;
+  }
+  return stored;
+}
+
 async function fetchEnableBankingAccountRow(date: string, accountUid: string, bank: string, sessionId: string): Promise<BalanceRow> {
   const s = store();
-  const stored = s.account(accountUid);
+  const stored = await ensureStoredAccount(accountUid, sessionId);
   const session = s.data.sessions[sessionId];
-  const base = stored ? describeAccount(stored, session) : undefined;
-  const account = base?.label ?? base?.name ?? stored?.product ?? accountUid;
+  const account = stored ? accountDisplayName(stored) : accountUid;
   const consentExpired = session && daysLeft(session.valid_until) < 0;
 
   if (consentExpired) {

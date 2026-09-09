@@ -2,7 +2,7 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import express from "express";
 import { config, isConfigured, setupProblems } from "./config.ts";
-import { eb, EnableBankingError } from "./enablebanking.ts";
+import { completeSession, eb, EnableBankingError } from "./enablebanking.ts";
 import { store } from "./store.ts";
 import { verifyPassword } from "./auth.ts";
 import { balancesPage, connectedPage, failedPage, privacyPage, setupPage, siteLoginPage, statusPage, termsPage } from "./pages.ts";
@@ -181,12 +181,27 @@ export function createApp() {
   app.get("/connect", async (req, res) => {
     if (!isConfigured()) return void res.status(503).type("html").send(failedPage("Finish setup first."));
     const bank = String(req.query.bank ?? "Eurobank");
-    const country = String(req.query.country ?? config.country).toUpperCase();
-    const psuType = String(req.query.psu_type ?? req.query.customer_type ?? "personal").toLowerCase() === "business" ? "business" : "personal";
+    const bankKey = bank.toLowerCase();
+    let country = String(req.query.country ?? config.country).toUpperCase();
+    const psuTypeDefault = bankKey === "wise" ? "business" : "personal";
+    const psuType = String(req.query.psu_type ?? req.query.customer_type ?? psuTypeDefault).toLowerCase() === "business" ? "business" : "personal";
     const label = String(req.query.label ?? "").trim() || undefined;
     try {
-      const banks = await eb.listAspsps(country);
-      const aspsp = banks.find((b) => b.name === bank) ?? banks.find((b) => b.name.toLowerCase() === bank.toLowerCase());
+      const findBank = (list: Awaited<ReturnType<typeof eb.listAspsps>>) =>
+        list.find((b) => b.name === bank) ?? list.find((b) => b.name.toLowerCase() === bankKey);
+      let banks = await eb.listAspsps(country);
+      let aspsp = findBank(banks);
+      if (!aspsp && bankKey === "wise" && !req.query.country) {
+        for (const fallback of ["GB", "EE", "US"]) {
+          if (fallback === country) continue;
+          banks = await eb.listAspsps(fallback);
+          aspsp = findBank(banks);
+          if (aspsp) {
+            country = fallback;
+            break;
+          }
+        }
+      }
       if (!aspsp) return void res.status(404).type("html").send(failedPage(`Bank "${bank}" not found in ${country}.`));
       const maxSeconds = Math.min(aspsp.maximum_consent_validity ?? 180 * 86_400, 180 * 86_400);
       const validUntil = new Date(Date.now() + maxSeconds * 1000 - 60_000);
@@ -212,9 +227,11 @@ export function createApp() {
     if (!pending) return void failed("Unknown or expired authorization. Visit /connect?bank=YourBank to start again.");
 
     try {
-      const session = await eb.createSession(code);
+      const created = await eb.createSession(code);
+      const session = await completeSession(created);
       store().addSession(session, { label: pending.label });
-      log(`bank connected: ${pending.label ?? session.aspsp.name}, ${session.accounts.length} account(s)`);
+      const currencies = session.accounts.map((a) => a.currency).join(", ");
+      log(`bank connected: ${pending.label ?? session.aspsp.name}, ${session.accounts.length} account(s) [${currencies}] psu=${session.psu_type} country=${session.aspsp.country}`);
       res.type("html").send(connectedPage(session, pending.label));
     } catch (err) {
       const msg = err instanceof EnableBankingError ? `Enable Banking returned ${err.status}: ${err.body.slice(0, 300)}` : (err as Error).message;

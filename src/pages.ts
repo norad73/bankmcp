@@ -60,13 +60,18 @@ export function shell(title: string, body: string, opts: { kind?: Kind; pill?: s
 </div></body></html>`;
 }
 
+const linkedAccountLabel = (a: { uid: string; name?: string; product?: string; currency: string }) => {
+  const base = [a.name, a.product].map((s) => s?.trim()).filter(Boolean).join(" · ") || a.uid;
+  return base.toUpperCase().includes(a.currency) ? base : `${base} · ${a.currency}`;
+};
+
 export function connectedPage(session: { aspsp: { name: string }; access: { valid_until: string }; accounts: Array<{ uid: string; name?: string; product?: string; currency: string }> }, label?: string): string {
   const n = session.accounts.length;
   const name = label?.trim() || session.aspsp.name;
   return shell(
     `${name} is linked`,
     `<p>${n} account${n === 1 ? "" : "s"} connected for balance sync.</p>
-     <ul class="rows">${session.accounts.map((a) => `<li><span>${esc([a.name, a.product].filter(Boolean).join(" · ") || a.uid)}</span><span class="r">${esc(a.currency)}</span></li>`).join("")}</ul>
+     <ul class="rows">${session.accounts.map((a) => `<li><span>${esc(linkedAccountLabel(a))}</span><span class="r">${esc(a.currency)}</span></li>`).join("")}</ul>
      <p class="muted">Consent valid until ${esc(fmtDate(session.access.valid_until))}. <a href="/balances">View balances</a></p>`,
     { kind: "ok", pill: "Connected" },
   );

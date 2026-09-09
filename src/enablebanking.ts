@@ -160,6 +160,7 @@ export const eb = {
   getSession: (sessionId: string) => api<SessionStatus>("GET", `/sessions/${sessionId}`),
   deleteSession: (sessionId: string) => api<unknown>("DELETE", `/sessions/${sessionId}`),
 
+  getAccount: (accountUid: string) => api<AccountResource>("GET", `/accounts/${accountUid}`),
   getBalances: async (accountUid: string) => (await api<{ balances: Balance[] }>("GET", `/accounts/${accountUid}/balances`)).balances,
 
   getTransactionPage: (accountUid: string, opts: { dateFrom?: string; dateTo?: string; continuationKey?: string } = {}) =>
@@ -169,3 +170,22 @@ export const eb = {
       continuation_key: opts.continuationKey,
     }),
 };
+
+/** Fill in accounts returned by getSession but missing from createSession. */
+export async function completeSession(session: Session): Promise<Session> {
+  try {
+    const status = await eb.getSession(session.session_id);
+    const accounts = new Map(session.accounts.map((a) => [a.uid, a]));
+    for (const uid of status.accounts ?? []) {
+      if (accounts.has(uid)) continue;
+      try {
+        accounts.set(uid, await eb.getAccount(uid));
+      } catch {
+        /* account not readable yet */
+      }
+    }
+    return { ...session, accounts: [...accounts.values()] };
+  } catch {
+    return session;
+  }
+}

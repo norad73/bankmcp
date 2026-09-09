@@ -63,11 +63,26 @@ export function simplifyBalances(balances: Balance[]): SimpleBalances {
   };
 }
 
+const trimmed = (value?: string) => {
+  const text = value?.trim();
+  return text || undefined;
+};
+
+export function accountDisplayName(a: Pick<StoredAccount, "label" | "name" | "product" | "iban" | "other_id" | "uid">): string {
+  const ibanTail = trimmed(a.iban)?.slice(-4);
+  return trimmed(a.label)
+    ?? trimmed(a.name)
+    ?? trimmed(a.product)
+    ?? (ibanTail ? `···${ibanTail}` : undefined)
+    ?? trimmed(a.other_id)
+    ?? a.uid;
+}
+
 export function describeAccount(a: StoredAccount, s?: StoredSession) {
   return {
     uid: a.uid,
     label: a.label ?? null,
-    name: a.name ?? a.product ?? null,
+    name: trimmed(a.name) ?? trimmed(a.product) ?? null,
     product: a.product ?? null,
     iban: a.iban ?? a.other_id ?? null,
     currency: a.currency,
