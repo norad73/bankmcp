@@ -188,15 +188,17 @@ table.bal tfoot tr.total td{border-top:2px solid var(--ink);padding-top:12px;fon
   );
 }
 
-export function balancesLoginPage(opts: { error?: string } = {}): string {
+export function siteLoginPage(opts: { returnTo?: string; error?: string } = {}): string {
+  const next = opts.returnTo && opts.returnTo.startsWith("/") ? opts.returnTo : "/";
   return shell(
-    "Balances",
+    "Sign in",
     `${opts.error ? `<p class="error">${esc(opts.error)}</p>` : ""}
-     <p class="muted">Enter the admin password to view live balances from all connected banks.</p>
-     <form method="post" action="/balances/login">
+     <p class="muted">Enter the admin password to continue.</p>
+     <form method="post" action="/login">
+       <input type="hidden" name="next" value="${esc(next)}">
        <label for="pw">Password</label>
        <input id="pw" type="password" name="password" autofocus autocomplete="current-password" required>
-       <button type="submit">View balances</button>
+       <button type="submit">Sign in</button>
      </form>`,
     { kind: "neutral", pill: "Sign in" },
   );

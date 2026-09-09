@@ -5,7 +5,7 @@ import { config, isConfigured, setupProblems } from "./config.ts";
 import { eb, EnableBankingError } from "./enablebanking.ts";
 import { store } from "./store.ts";
 import { verifyPassword } from "./auth.ts";
-import { balancesLoginPage, balancesPage, connectedPage, failedPage, privacyPage, setupPage, statusPage, termsPage } from "./pages.ts";
+import { balancesPage, connectedPage, failedPage, privacyPage, setupPage, siteLoginPage, statusPage, termsPage } from "./pages.ts";
 import { applySetup, setupAvailable } from "./setup.ts";
 import { fetchRatesToUsd } from "./fx.ts";
 import { fetchAllBalances, syncBalancesToSheet } from "./sync-sheets.ts";
@@ -28,6 +28,65 @@ export function createApp() {
     next();
   });
 
+  const SESSION_COOKIE = "bankconnector_session";
+  const SESSION_TTL = 24 * 60 * 60;
+  const sessionSecret = () => config.adminPasswordHash || config.adminPassword || config.cronSecret || "";
+
+  const signSessionCookie = () => {
+    const exp = Math.floor(Date.now() / 1000) + SESSION_TTL;
+    const sig = createHmac("sha256", sessionSecret()).update(String(exp)).digest("base64url");
+    return `${exp}.${sig}`;
+  };
+
+  const verifySessionCookie = (value: string | undefined) => {
+    if (!value || !sessionSecret()) return false;
+    const [expStr, sig] = value.split(".");
+    const exp = Number(expStr);
+    if (!Number.isFinite(exp) || exp < Math.floor(Date.now() / 1000)) return false;
+    const expected = createHmac("sha256", sessionSecret()).update(String(exp)).digest("base64url");
+    const a = Buffer.from(sig ?? "");
+    const b = Buffer.from(expected);
+    return a.length === b.length && timingSafeEqual(a, b);
+  };
+
+  const readCookie = (req: express.Request, name: string) => {
+    const header = req.headers.cookie;
+    if (!header) return undefined;
+    for (const part of header.split(";")) {
+      const eq = part.indexOf("=");
+      if (eq <= 0) continue;
+      if (part.slice(0, eq).trim() !== name) continue;
+      return decodeURIComponent(part.slice(eq + 1).trim());
+    }
+    return undefined;
+  };
+
+  const sessionAuthed = (req: express.Request) => verifySessionCookie(readCookie(req, SESSION_COOKIE));
+
+  const isPublicRoute = (req: express.Request) => {
+    const { path, method } = req;
+    if (path === "/healthz") return true;
+    if (path === "/callback") return true;
+    if (path.startsWith("/cron/")) return true;
+    if (path === "/login") return true;
+    if (setupAvailable() && (path === "/" || path === "/setup")) return true;
+    return false;
+  };
+
+  app.use((req, res, next) => {
+    if (isPublicRoute(req)) return next();
+    if (!sessionAuthed(req)) {
+      const returnTo = req.originalUrl.startsWith("/") ? req.originalUrl : "/";
+      if (methodIsSafe(req.method)) return void res.type("html").send(siteLoginPage({ returnTo }));
+      return void res.status(401).type("html").send(siteLoginPage({ returnTo, error: "Sign in required." }));
+    }
+    next();
+  });
+
+  function methodIsSafe(method: string) {
+    return method === "GET" || method === "HEAD";
+  }
+
   const callbackUrl = new URL("/callback", config.baseUrl).href;
   const setupCsp = "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
 
@@ -47,43 +106,17 @@ export function createApp() {
 
   app.get("/healthz", (_req, res) => void res.json({ ok: true, version: VERSION, configured: isConfigured() }));
 
-  const BALANCES_COOKIE = "bankconnector_balances";
-  const BALANCES_TTL = 24 * 60 * 60;
-  const balancesSecret = () => config.adminPasswordHash || config.adminPassword || config.cronSecret || "";
+  app.post("/login", express.urlencoded({ extended: false }), (req, res) => {
+    const body = req.body as Record<string, string | undefined>;
+    const password = String(body.password ?? "");
+    const next = String(body.next ?? "/");
+    const returnTo = next.startsWith("/") && !next.startsWith("//") ? next : "/";
+    if (!verifyPassword(password)) return void res.status(401).type("html").send(siteLoginPage({ returnTo, error: "Wrong password." }));
+    res.cookie(SESSION_COOKIE, signSessionCookie(), { httpOnly: true, sameSite: "lax", secure: req.secure, maxAge: SESSION_TTL * 1000, path: "/" });
+    res.redirect(303, returnTo);
+  });
 
-  const signBalancesCookie = () => {
-    const exp = Math.floor(Date.now() / 1000) + BALANCES_TTL;
-    const sig = createHmac("sha256", balancesSecret()).update(String(exp)).digest("base64url");
-    return `${exp}.${sig}`;
-  };
-
-  const verifyBalancesCookie = (value: string | undefined) => {
-    if (!value || !balancesSecret()) return false;
-    const [expStr, sig] = value.split(".");
-    const exp = Number(expStr);
-    if (!Number.isFinite(exp) || exp < Math.floor(Date.now() / 1000)) return false;
-    const expected = createHmac("sha256", balancesSecret()).update(String(exp)).digest("base64url");
-    const a = Buffer.from(sig ?? "");
-    const b = Buffer.from(expected);
-    return a.length === b.length && timingSafeEqual(a, b);
-  };
-
-  const readCookie = (req: express.Request, name: string) => {
-    const header = req.headers.cookie;
-    if (!header) return undefined;
-    for (const part of header.split(";")) {
-      const eq = part.indexOf("=");
-      if (eq <= 0) continue;
-      if (part.slice(0, eq).trim() !== name) continue;
-      return decodeURIComponent(part.slice(eq + 1).trim());
-    }
-    return undefined;
-  };
-
-  const balancesAuthed = (req: express.Request) => verifyBalancesCookie(readCookie(req, BALANCES_COOKIE));
-
-  app.get("/balances", async (req, res) => {
-    if (!balancesAuthed(req)) return void res.type("html").send(balancesLoginPage());
+  app.get("/balances", async (_req, res) => {
     if (!isConfigured()) return void res.type("html").send(balancesPage({ asOf: isoDate(), fetchedAt: new Date().toISOString(), rows: [], error: "BankConnector is not configured yet." }));
     try {
       const [result, fx] = await Promise.all([
@@ -108,13 +141,6 @@ export function createApp() {
       log("balances page failed", (err as Error).message);
       res.type("html").send(balancesPage({ asOf: isoDate(), fetchedAt: new Date().toISOString(), rows: [], error: (err as Error).message }));
     }
-  });
-
-  app.post("/balances/login", express.urlencoded({ extended: false }), (req, res) => {
-    const password = String((req.body as Record<string, string | undefined>).password ?? "");
-    if (!verifyPassword(password)) return void res.status(401).type("html").send(balancesLoginPage({ error: "Wrong password." }));
-    res.cookie(BALANCES_COOKIE, signBalancesCookie(), { httpOnly: true, sameSite: "lax", secure: req.secure, maxAge: BALANCES_TTL * 1000, path: "/" });
-    res.redirect(303, "/balances");
   });
 
   if (config.cronSecret) {
