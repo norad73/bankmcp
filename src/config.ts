@@ -91,6 +91,9 @@ export const config = {
   airwallexApiKey: env.AIRWALLEX_API_KEY ?? "",
   /** Optional account ID for scoped keys with multiple accounts (x-login-as). */
   airwallexAccountId: env.AIRWALLEX_ACCOUNT_ID ?? "",
+  /** Stripe secret or restricted key with Balance read. https://docs.stripe.com/api/balance/balance_retrieve */
+  stripeApiBase: (env.STRIPE_API_BASE ?? "https://api.stripe.com").replace(/\/+$/, ""),
+  stripeSecretKey: env.STRIPE_SECRET_KEY ?? "",
   // Hosts an OAuth client may send the sign-in back to. Stops a phishing link
   // from registering a client that redirects your authorization code elsewhere.
   // Defaults cover the well-known MCP clients; subdomains are included.

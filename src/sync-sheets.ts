@@ -5,11 +5,12 @@ import { describeAccount, isoDate, simplifyBalances } from "./data.ts";
 import { eb, EnableBankingError } from "./enablebanking.ts";
 import { store } from "./store.ts";
 import { isAirwallexConfigured, listAirwallexBalances, AirwallexError } from "./airwallex.ts";
+import { isStripeConfigured, listStripeBalances, StripeError } from "./stripe.ts";
 import { isVivaConfigured, listVivaWallets, VivaError } from "./viva.ts";
 
 export interface BalanceRow {
   date: string;
-  source: "enablebanking" | "viva" | "airwallex";
+  source: "enablebanking" | "viva" | "airwallex" | "stripe";
   account: string;
   uid: string;
   iban?: string;
@@ -87,8 +88,47 @@ async function fetchAirwallexBalances(date: string): Promise<BalanceRow[]> {
       available: b.available,
     }));
   } catch (err) {
-    const msg = err instanceof AirwallexError ? `${err.status}` : (err as Error).message;
+    const msg =
+      err instanceof AirwallexError
+        ? `${err.status}: ${(() => { try { return JSON.parse(err.body).code ?? err.body.slice(0, 120); } catch { return err.body.slice(0, 120); } })()}`
+        : (err as Error).message;
     return [{ date, source: "airwallex", account: "Airwallex", uid: "airwallex:error", currency: "USD", error: msg }];
+  }
+}
+
+async function fetchStripeBalances(date: string): Promise<BalanceRow[]> {
+  if (!isStripeConfigured()) return [];
+  try {
+    const balances = await listStripeBalances();
+    return balances.flatMap((b) => {
+      const rows: BalanceRow[] = [{
+        date,
+        source: "stripe",
+        account: "Stripe available",
+        uid: `stripe:available:${b.currency}`,
+        currency: b.currency,
+        booked: b.available,
+        available: b.available,
+      }];
+      if (b.pending !== 0) {
+        rows.push({
+          date,
+          source: "stripe",
+          account: "Stripe pending",
+          uid: `stripe:pending:${b.currency}`,
+          currency: b.currency,
+          booked: b.pending,
+          available: b.pending,
+        });
+      }
+      return rows;
+    });
+  } catch (err) {
+    const msg =
+      err instanceof StripeError
+        ? `${err.status}: ${(() => { try { return JSON.parse(err.body).error?.message ?? err.body.slice(0, 120); } catch { return err.body.slice(0, 120); } })()}`
+        : (err as Error).message;
+    return [{ date, source: "stripe", account: "Stripe", uid: "stripe:error", currency: "USD", error: msg }];
   }
 }
 
@@ -99,10 +139,11 @@ export async function fetchAllBalances(): Promise<{ rows: BalanceRow[] }> {
   const ebRows = await fetchEnableBankingBalances(date);
   const vivaRows = await fetchVivaBalances(date);
   const airwallexRows = await fetchAirwallexBalances(date);
-  const rows = [...ebRows, ...vivaRows, ...airwallexRows];
+  const stripeRows = await fetchStripeBalances(date);
+  const rows = [...ebRows, ...vivaRows, ...airwallexRows, ...stripeRows];
 
   if (!rows.length) {
-    throw new Error("No accounts linked yet. Connect a bank or configure Viva/Airwallex API credentials.");
+    throw new Error("No accounts linked yet. Connect a bank or configure Viva/Airwallex/Stripe API credentials.");
   }
 
   return { rows };
