@@ -60,43 +60,22 @@ export function shell(title: string, body: string, opts: { kind?: Kind; pill?: s
 </div></body></html>`;
 }
 
-export function loginPage(opts: { requestId: string; clientName?: string; returnTo?: string; error?: string }): string {
-  const who = opts.clientName ? `<b>${esc(opts.clientName)}</b>` : "An app";
-  const back = opts.returnTo ? `<p class="muted">After signing in you are sent back to <b>${esc(opts.returnTo)}</b>. Stop if that is not where you came from.</p>` : "";
-  return shell(
-    "Allow access?",
-    `<p>${who} wants read-only access to your bank accounts through this server. It reads balances and transactions. It has no payment tools.</p>${back}
-     ${opts.error ? `<p class="error">${esc(opts.error)}</p>` : ""}
-     <form method="post" action="/login">
-       <input type="hidden" name="request" value="${esc(opts.requestId)}">
-       <label for="pw">Password</label>
-       <input id="pw" type="password" name="password" autofocus autocomplete="current-password" required>
-       <button type="submit">Allow access</button>
-     </form>`,
-    { kind: "neutral", pill: "Sign-in request" },
-  );
-}
-
 export function connectedPage(session: { aspsp: { name: string }; access: { valid_until: string }; accounts: Array<{ uid: string; name?: string; product?: string; currency: string }> }): string {
   const n = session.accounts.length;
   return shell(
     `${session.aspsp.name} is linked`,
-    `<p>${n} account${n === 1 ? "" : "s"} shared, read-only.</p>
+    `<p>${n} account${n === 1 ? "" : "s"} connected for balance sync.</p>
      <ul class="rows">${session.accounts.map((a) => `<li><span>${esc([a.name, a.product].filter(Boolean).join(" · ") || a.uid)}</span><span class="r">${esc(a.currency)}</span></li>`).join("")}</ul>
-     <p class="muted">Consent valid until ${esc(fmtDate(session.access.valid_until))}. You can close this tab and go back to your assistant.</p>`,
+     <p class="muted">Consent valid until ${esc(fmtDate(session.access.valid_until))}. <a href="/balances">View balances</a></p>`,
     { kind: "ok", pill: "Connected" },
   );
 }
 
 export function failedPage(message: string): string {
-  return shell("Bank not connected", `<p class="error">${esc(message)}</p><p class="muted">Go back to your assistant and start again.</p>`, { kind: "error", pill: "Not connected" });
+  return shell("Bank not connected", `<p class="error">${esc(message)}</p><p class="muted">Visit <code>/connect?bank=YourBank</code> to try again.</p>`, { kind: "error", pill: "Not connected" });
 }
 
-export function signInFailedPage(message: string): string {
-  return shell("Sign-in failed", `<p class="error">${esc(message)}</p>`, { kind: "error", pill: "Not signed in" });
-}
-
-export function statusPage(input: { problems: string[]; mcpUrl: string; callbackUrl: string }): string {
+export function statusPage(input: { problems: string[]; callbackUrl: string }): string {
   if (input.problems.length) {
     return shell(
       "Not configured yet",
@@ -104,27 +83,16 @@ export function statusPage(input: { problems: string[]; mcpUrl: string; callback
       { kind: "error", pill: "Setup incomplete" },
     );
   }
-  // Deliberately says nothing about which banks or accounts are connected:
-  // this page is reachable without a password. Ask consent_status through the connector.
-  if (config.localMode) {
-    return shell(
-      config.appName,
-      `<p>Running on this machine. Your MCP client is connected to it over stdio.</p>
-       <p class="muted" style="margin-bottom:4px">Redirect URL for the application at Enable Banking</p><p><code>${esc(input.callbackUrl)}</code></p>
-       <p class="muted">To link a bank, ask your assistant to connect it. The browser opens for the bank login and returns here.</p>`,
-      { kind: "ok", pill: "Running locally" },
-    );
-  }
   return shell(
     config.appName,
-    `<p>Running. Two addresses to copy:</p>
-     <p class="muted" style="margin-bottom:4px">Redirect URL for the application at Enable Banking</p><p><code>${esc(input.callbackUrl)}</code></p>
-     <p class="muted" style="margin-bottom:4px">MCP connector URL for your assistant, Claude, ChatGPT, Cursor or another (sign in with the admin password)</p><p><code>${esc(input.mcpUrl)}</code></p>`,
+    `<p>Running.</p>
+     <p class="muted" style="margin-bottom:4px">Enable Banking redirect URL</p><p><code>${esc(input.callbackUrl)}</code></p>
+     <p><a href="/balances">View balances</a> · connect banks via <code>/connect?bank=Eurobank</code></p>`,
     { kind: "ok", pill: "Running" },
   );
 }
 
-export const CONSENT_DESCRIPTION = `${config.appName} lets you ask your AI assistant about your own accounts. It reads balances and transactions. It has no payment tools, and only the holder of the password can use it. You can revoke access at your bank at any time.`;
+export const CONSENT_DESCRIPTION = `${config.appName} syncs daily account balances to a spreadsheet. It reads balances only — no payment tools. You can revoke access at your bank at any time.`;
 
 export function setupPage(opts: { error?: string; values?: { app_id?: string; country?: string }; baseUrl?: string } = {}): string {
   const v = opts.values ?? {};
@@ -148,10 +116,10 @@ export function setupPage(opts: { error?: string; values?: { app_id?: string; co
        <textarea id="pem" name="pem" rows="3" placeholder="…or paste the contents of the .pem file here" spellcheck="false"></textarea>
        <label for="country">Country of your banks</label>
        <input id="country" name="country" maxlength="2" placeholder="DK" value="${esc(v.country ?? "")}" style="width:6em;text-transform:uppercase">
-       ${config.localMode ? "" : `<label for="password">Password (12+ characters, used when connecting your assistant)</label>
+       <label for="password">Password (12+ characters, for /balances login)</label>
        <input id="password" type="password" name="password" required minlength="12" autocomplete="new-password">
        <label for="password2">Repeat password</label>
-       <input id="password2" type="password" name="password2" required minlength="12" autocomplete="new-password">`}
+       <input id="password2" type="password" name="password2" required minlength="12" autocomplete="new-password">
        <button type="submit">Finish setup</button>
      </form>
      <script>
@@ -172,8 +140,8 @@ export const privacyPage = () =>
   shell(
     "Privacy",
     `<p>This server is operated by the person who deployed it, to access their own bank accounts. It is not offered as a service to anyone else.</p>
-     <p>Account identifiers and consent references from Enable Banking are stored on the server so the operator's assistant can fetch balances and transactions on request. Transactions and balances themselves are not stored. No data is shared with third parties and nothing is collected about visitors.</p>
-     <p>The software is open source. Its authors do not operate this server, receive no data from it, and are not affiliated with Enable Banking, Anthropic or any bank.</p>`,
+     <p>Account identifiers and consent references from Enable Banking are stored on the server so daily balance sync can run. Balances themselves are not stored on disk. No data is shared with third parties and nothing is collected about visitors.</p>
+     <p>The software is open source. Its authors do not operate this server, receive no data from it, and are not affiliated with Enable Banking or any bank.</p>`,
   );
 
 export const termsPage = () =>
@@ -234,16 +202,11 @@ export function balancesLoginPage(opts: { error?: string } = {}): string {
   );
 }
 
-const hasBalance = (r: BalanceDisplayRow) => (r.booked ?? 0) !== 0 || (r.available ?? 0) !== 0;
+const hasBalance = (r: BalanceDisplayRow) => (r.available ?? 0) !== 0;
 
 function totalsByCurrency(rows: BalanceDisplayRow[]) {
-  const totals = new Map<string, { booked: number; available: number }>();
-  for (const r of rows) {
-    const t = totals.get(r.currency) ?? { booked: 0, available: 0 };
-    t.booked += r.booked ?? 0;
-    t.available += r.available ?? 0;
-    totals.set(r.currency, t);
-  }
+  const totals = new Map<string, number>();
+  for (const r of rows) totals.set(r.currency, (totals.get(r.currency) ?? 0) + (r.available ?? 0));
   return [...totals.entries()].sort(([a], [b]) => a.localeCompare(b));
 }
 
@@ -257,17 +220,16 @@ export function balancesPage(input: { asOf: string; fetchedAt: string; rows: Bal
   const totalUsd = ok.reduce((sum, r) => sum + (usd(r.available, r.currency) ?? 0), 0);
   const fxNote = input.fx?.date ? ` · FX ${esc(input.fx.date)} (ECB)` : "";
   const table = rows.length
-    ? `<table class="bal"><thead><tr><th>Source</th><th>Account</th><th>Currency</th><th class="num">Booked</th><th class="num">Available</th><th class="num">USD equiv</th></tr></thead><tbody>${rows
+    ? `<table class="bal"><thead><tr><th>Source</th><th>Account</th><th>Currency</th><th class="num">Available</th><th class="num">USD equiv</th></tr></thead><tbody>${rows
         .map((r) => {
           const cls = r.error ? " class=\"err\"" : "";
-          const booked = r.error ? esc(r.error) : fmtMoney(r.booked, r.currency);
-          const available = r.error ? "—" : fmtMoney(r.available, r.currency);
+          const available = r.error ? esc(r.error) : fmtMoney(r.available, r.currency);
           const usdEquiv = r.error ? "—" : fmtUsd(usd(r.available, r.currency));
-          return `<tr${cls}><td>${esc(r.source)}</td><td>${esc(r.account)}</td><td>${esc(r.currency)}</td><td class="num">${booked}</td><td class="num">${available}</td><td class="num">${usdEquiv}</td></tr>`;
+          return `<tr${cls}><td>${esc(r.source)}</td><td>${esc(r.account)}</td><td>${esc(r.currency)}</td><td class="num">${available}</td><td class="num">${usdEquiv}</td></tr>`;
         })
         .join("")}</tbody>${totals.length ? `<tfoot>${totals
-        .map(([currency, t]) => `<tr class="total"><td colspan="2">Total</td><td>${esc(currency)}</td><td class="num">${fmtMoney(t.booked, currency)}</td><td class="num">${fmtMoney(t.available, currency)}</td><td class="num">${fmtUsd(usd(t.available, currency))}</td></tr>`)
-        .join("")}${input.fx ? `<tr class="total"><td colspan="5">Grand total (USD)</td><td class="num">${fmtMoney(totalUsd, "USD")}</td></tr>` : ""}</tfoot>` : ""}</table>`
+        .map(([currency, amount]) => `<tr class="total"><td colspan="2">Total</td><td>${esc(currency)}</td><td class="num">${fmtMoney(amount, currency)}</td><td class="num">${fmtUsd(usd(amount, currency))}</td></tr>`)
+        .join("")}${input.fx ? `<tr class="total"><td colspan="4">Grand total (USD)</td><td class="num">${fmtMoney(totalUsd, "USD")}</td></tr>` : ""}</tfoot>` : ""}</table>`
     : `<p class="muted">No non-zero balances.</p>`;
   return wideShell(
     "Balances",
