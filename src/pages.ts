@@ -159,6 +159,7 @@ export const termsPage = () =>
 
 export interface BalanceDisplayRow {
   source: string;
+  logo?: string;
   account: string;
   currency: string;
   booked?: number;
@@ -186,6 +187,8 @@ function wideShell(title: string, body: string, opts: { kind?: Kind; pill?: stri
 table.bal th,table.bal td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
 table.bal th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600}
 table.bal td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+table.bal th.logo,table.bal td.logo{width:36px;padding-right:4px;text-align:center}
+table.bal td.logo img{width:24px;height:24px;border-radius:6px;object-fit:contain;background:var(--bg);vertical-align:middle;display:block}
 table.bal tr.err td{color:var(--err)}
 table.bal .status-ok{color:var(--ok);font-weight:600}
 table.bal .status-err{color:var(--err)}
@@ -243,18 +246,19 @@ export function balancesPage(input: { asOf: string; fetchedAt: string; rows: Bal
   const pillParts = [`${rows.length} account${rows.length === 1 ? "" : "s"}`];
   if (failed.length) pillParts.push(`${failed.length} failed`);
   const table = rows.length
-    ? `<table class="bal"><thead><tr><th>Source</th><th>Account</th><th>Currency</th><th>Status</th><th class="num">Available</th><th class="num">USD equiv</th></tr></thead><tbody>${rows
+    ? `<table class="bal"><thead><tr><th class="logo"></th><th>Source</th><th>Account</th><th>Currency</th><th>Status</th><th class="num">Available</th><th class="num">USD equiv</th></tr></thead><tbody>${rows
         .map((r) => {
           const status = rowStatus(r);
           const amount = rowAmount(r);
           const cls = r.error ? " class=\"err\"" : "";
           const available = r.error ? "—" : fmtMoney(amount, r.currency);
           const usdEquiv = r.error ? "—" : fmtUsd(usd(amount, r.currency));
-          return `<tr${cls}><td>${esc(r.source)}</td><td>${esc(r.account)}</td><td>${esc(r.currency)}</td><td class="${status.cls}">${esc(status.label)}</td><td class="num">${available}</td><td class="num">${usdEquiv}</td></tr>`;
+          const logo = r.logo ? `<td class="logo"><img src="${esc(r.logo)}" alt="" width="24" height="24" loading="lazy"></td>` : `<td class="logo"></td>`;
+          return `<tr${cls}>${logo}<td>${esc(r.source)}</td><td>${esc(r.account)}</td><td>${esc(r.currency)}</td><td class="${status.cls}">${esc(status.label)}</td><td class="num">${available}</td><td class="num">${usdEquiv}</td></tr>`;
         })
         .join("")}</tbody>${totals.length ? `<tfoot>${totals
-        .map(([currency, amount]) => `<tr class="total"><td colspan="3">Total</td><td></td><td class="num">${fmtMoney(amount, currency)}</td><td class="num">${fmtUsd(usd(amount, currency))}</td></tr>`)
-        .join("")}${input.fx ? `<tr class="total"><td colspan="5">Grand total (USD)</td><td class="num">${fmtMoney(totalUsd, "USD")}</td></tr>` : ""}</tfoot>` : ""}</table>`
+        .map(([currency, amount]) => `<tr class="total"><td></td><td colspan="3">Total</td><td></td><td class="num">${fmtMoney(amount, currency)}</td><td class="num">${fmtUsd(usd(amount, currency))}</td></tr>`)
+        .join("")}${input.fx ? `<tr class="total"><td colspan="6">Grand total (USD)</td><td class="num">${fmtMoney(totalUsd, "USD")}</td></tr>` : ""}</tfoot>` : ""}</table>`
     : `<p class="muted">No accounts linked yet.</p>`;
   return wideShell(
     "Balances",

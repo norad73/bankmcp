@@ -11,6 +11,7 @@ import { fetchRatesToUsd } from "./fx.ts";
 import { fetchAllBalances, syncBalancesToSheet } from "./sync-sheets.ts";
 import { isWiseConfigured } from "./wise.ts";
 import { isoDate } from "./data.ts";
+import { loadAspspLogos, resolveLogo } from "./logos.ts";
 import { VERSION } from "./version.ts";
 
 export function createApp() {
@@ -24,7 +25,7 @@ export function createApp() {
       "X-Frame-Options": "DENY",
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "no-referrer",
-      "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+      "Content-Security-Policy": "default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
     });
     next();
   });
@@ -120,20 +121,25 @@ export function createApp() {
   app.get("/balances", async (_req, res) => {
     if (!isConfigured()) return void res.type("html").send(balancesPage({ asOf: isoDate(), fetchedAt: new Date().toISOString(), rows: [], error: "BankConnector is not configured yet." }));
     try {
-      const [result, fx] = await Promise.all([
+      const [result, fx, aspspLogos] = await Promise.all([
         fetchAllBalances(),
         fetchRatesToUsd(["EUR", "USD", "GBP"]),
+        loadAspspLogos(),
       ]);
       const rows = result.rows
         .filter((r) => r.source !== "airwallex" || ["USD", "EUR"].includes(r.currency.toUpperCase()))
-        .map((r) => ({
-          source: r.bank ?? r.source,
-          account: r.account,
-          currency: r.currency,
-          booked: r.booked,
-          available: r.available,
-          error: r.error,
-        }));
+        .map((r) => {
+          const source = r.bank ?? r.source;
+          return {
+            source,
+            logo: resolveLogo(source, r.source, aspspLogos),
+            account: r.account,
+            currency: r.currency,
+            booked: r.booked,
+            available: r.available,
+            error: r.error,
+          };
+        });
       res.type("html").send(balancesPage({
         asOf: isoDate(),
         fetchedAt: new Date().toISOString(),
