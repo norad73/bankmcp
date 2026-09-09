@@ -5,3 +5,6 @@ secrets/
 *.pem
 .DS_Store
 dist/
+logs/**/*.txt
+logs/**/*.json
+logs/**/eb-debug.jsonl

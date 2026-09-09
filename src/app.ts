@@ -16,6 +16,8 @@ import { isWiseConfigured } from "./wise.ts";
 import { loadAspspLogos, resolveLogo } from "./logos.ts";
 import { VERSION } from "./version.ts";
 import { seedBalanceCacheForLabel } from "./seed-cache.ts";
+import { ebLog } from "./eb-log.ts";
+import { probeEnableBankingSessions, readEbDebugLogTail, summarizeSessionCreation } from "./investigate-eb.ts";
 
 export function createApp() {
   const log = (msg: string, extra?: unknown) => console.log(`[bank ${new Date().toISOString()}] ${msg}`, extra ?? "");
@@ -161,6 +163,16 @@ export function createApp() {
     }
   });
 
+  app.get("/debug/eb-investigation", async (req, res) => {
+    const label = String(req.query.label ?? "Eurobank USA Branch");
+    try {
+      const probes = await probeEnableBankingSessions(label);
+      res.json({ ok: true, label, probes, logPath: "logs/eb-debug.jsonl", logTail: readEbDebugLogTail() });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: (err as Error).message, logTail: readEbDebugLogTail() });
+    }
+  });
+
   app.post("/balances/refresh", express.urlencoded({ extended: false }), async (req, res) => {
     const uid = String((req.body as Record<string, string | undefined>).uid ?? "").trim();
     if (!uid) return void res.redirect(303, "/balances");
@@ -295,10 +307,23 @@ export function createApp() {
 
     try {
       let created = await eb.createSession(code);
+      summarizeSessionCreation(created, pending.label);
       let session = await completeSession(created);
+      ebLog("callback.completeSession", {
+        label: pending.label ?? session.aspsp.name,
+        sessionId: session.session_id,
+        accountCount: session.accounts.length,
+        accountUids: session.accounts.map((a) => a.uid),
+      });
       if (!session.accounts.length) {
         await new Promise((r) => setTimeout(r, 1500));
         session = await completeSession(created);
+        ebLog("callback.completeSession.retry", {
+          label: pending.label ?? session.aspsp.name,
+          sessionId: session.session_id,
+          accountCount: session.accounts.length,
+          accountUids: session.accounts.map((a) => a.uid),
+        });
       }
       store().addSession(session, { label: pending.label });
       const currencies = session.accounts.map((a) => a.currency).join(", ");

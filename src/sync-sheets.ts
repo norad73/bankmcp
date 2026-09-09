@@ -14,6 +14,7 @@ import { isPayPalConfigured, listPayPalBalances, PayPalError } from "./paypal.ts
 import { isStripeConfigured, listStripeBalances, StripeError } from "./stripe.ts";
 import { isVivaConfigured, listVivaWallets, VivaError } from "./viva.ts";
 import { isWiseConfigured, listWiseBalances, WiseError } from "./wise.ts";
+import { ebLog } from "./eb-log.ts";
 
 export interface BalanceRow {
   date: string;
@@ -158,8 +159,10 @@ async function fetchEnableBankingAccountRow(date: string, accountUid: string, ba
       available: balances.available,
     }, date);
   } catch (err) {
+    const error = ebErrorMessage(err);
+    ebLog("fetch.getBalances.fail", { sessionId: sessionId, label: bank, accountUid, account, error });
     if (cached) return rowFromCache(date, accountUid, base, cached);
-    return { date, ...base, uid: accountUid, error: ebErrorMessage(err) };
+    return { date, ...base, uid: accountUid, error };
   }
 }
 
@@ -189,15 +192,19 @@ async function fetchEnableBankingBalances(date: string, opts: FetchBalanceOpts):
       try {
         const status = await withTimeout(`Enable Banking ${bank} session`, eb.getSession(session.id), 15_000);
         accountUids = status.accounts ?? accountUids;
+        ebLog("fetch.getSession", { sessionId: session.id, label: bank, accountUids, status: status.status });
       } catch (err) {
+        const error = ebErrorMessage(err);
+        ebLog("fetch.getSession.fail", { sessionId: session.id, label: bank, error });
         if (!accountUids.length) {
-          rows.push({ date, source: "enablebanking", bank, account: bank, uid: `session:${session.id}`, currency: "EUR", error: ebErrorMessage(err) });
+          rows.push({ date, source: "enablebanking", bank, account: bank, uid: `session:${session.id}`, currency: "EUR", error });
           continue;
         }
       }
     }
 
     if (!accountUids.length) {
+      ebLog("fetch.noAccounts", { sessionId: session.id, label: bank });
       rows.push({ date, source: "enablebanking", bank, account: bank, uid: `session:${session.id}:empty`, currency: "EUR", error: "No accounts returned by bank" });
       continue;
     }

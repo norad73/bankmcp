@@ -8,6 +8,7 @@ import { hashPassword } from "./auth.ts";
 import { store } from "./store.ts";
 import { daysLeft } from "./data.ts";
 import { clearBalanceCacheForLabel, seedBalanceCacheForLabel } from "./seed-cache.ts";
+import { probeEnableBankingSessions, readEbDebugLogTail } from "./investigate-eb.ts";
 
 const [command, ...args] = process.argv.slice(2);
 
@@ -107,6 +108,17 @@ switch (command) {
     }
     break;
   }
+  case "probe-eb": {
+    const label = readFlag("label") ?? "Eurobank USA Branch";
+    try {
+      const probes = await probeEnableBankingSessions(label);
+      console.log(JSON.stringify({ ok: true, label, probes, logTail: readEbDebugLogTail() }, null, 2));
+    } catch (err) {
+      console.error((err as Error).message);
+      process.exit(1);
+    }
+    break;
+  }
   case "check": {
     const problems = setupProblems();
     if (problems.length) {
@@ -134,6 +146,6 @@ switch (command) {
     break;
   }
   default:
-    console.log("Usage: node src/cli.ts <hash-password [password] | check | seed-cache ...>");
+    console.log("Usage: node src/cli.ts <hash-password [password] | check | seed-cache ... | probe-eb [--label NAME]>");
     process.exit(command ? 1 : 0);
 }
