@@ -233,6 +233,29 @@ function fmtFetchedAt(iso?: string) {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "Europe/Athens" });
 }
 
+const CACHE_STALE_MS = 24 * 60 * 60 * 1000;
+
+function cacheAgeMs(fetchedAt?: string): number | undefined {
+  if (!fetchedAt) return undefined;
+  const ms = Date.now() - Date.parse(fetchedAt);
+  return Number.isFinite(ms) && ms >= 0 ? ms : undefined;
+}
+
+function fmtCacheAge(fetchedAt?: string): string | undefined {
+  const ms = cacheAgeMs(fetchedAt);
+  if (ms === undefined) return undefined;
+  const totalMin = Math.floor(ms / 60_000);
+  if (totalMin < 60) return `${totalMin}m`;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return m ? `${h}h${m}m` : `${h}h`;
+}
+
+function cachedStatusLabel(fetchedAt?: string): string {
+  const age = fmtCacheAge(fetchedAt);
+  return age ? `Cached (${age})` : "Cached";
+}
+
 function rowStatus(r: BalanceDisplayRow): { short: string; detail: string; cls: string } {
   if (r.error) {
     return { short: "Error", detail: r.error, cls: "status-err" };
@@ -241,12 +264,17 @@ function rowStatus(r: BalanceDisplayRow): { short: string; detail: string; cls: 
   if (amount === undefined) {
     return { short: "Empty", detail: "No balance returned", cls: "status-muted" };
   }
+  const stale = r.cached && (cacheAgeMs(r.fetchedAt) ?? 0) >= CACHE_STALE_MS;
   if (amount === 0) {
     const detail = r.cached ? `Zero balance · cached ${fmtFetchedAt(r.fetchedAt)}` : "Zero balance";
-    return { short: r.cached ? "Cached" : "Zero", detail, cls: "status-muted" };
+    return { short: r.cached ? cachedStatusLabel(r.fetchedAt) : "Zero", detail, cls: stale ? "status-err" : "status-muted" };
   }
   if (r.cached) {
-    return { short: "Cached", detail: `Cached ${fmtFetchedAt(r.fetchedAt)} · ${fmtMoney(amount, r.currency)}`, cls: "status-ok" };
+    return {
+      short: cachedStatusLabel(r.fetchedAt),
+      detail: `Cached ${fmtFetchedAt(r.fetchedAt)} · ${fmtMoney(amount, r.currency)}`,
+      cls: stale ? "status-err" : "status-ok",
+    };
   }
   return { short: "Live", detail: `Fetched ${fmtFetchedAt(r.fetchedAt)} · ${fmtMoney(amount, r.currency)}`, cls: "status-ok" };
 }
