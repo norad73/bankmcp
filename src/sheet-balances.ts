@@ -5,6 +5,7 @@ import type { BalanceRow } from "./sync-sheets.ts";
 /** Column keys match the Balances tab headers (USD equivalents). */
 export interface SheetBalanceColumns {
   stripe?: number;
+  mercury?: number;
   airwallexUsd?: number;
   airwallexEur?: number;
   wiseUsd?: number;
@@ -59,6 +60,7 @@ function ebBank(r: BalanceRow): string {
 export function buildSheetBalanceColumns(rows: BalanceRow[], fx: FxRates | undefined): SheetBalanceColumns {
   return {
     stripe: sumUsd(rows, fx, (r) => r.source === "stripe"),
+    mercury: sumUsd(rows, fx, (r) => r.source === "mercury"),
     airwallexUsd: sumUsd(rows, fx, (r) => r.source === "airwallex" && r.currency.toUpperCase() === "USD"),
     airwallexEur: sumUsd(rows, fx, (r) => r.source === "airwallex" && r.currency.toUpperCase() === "EUR"),
     wiseUsd: sumUsd(rows, fx, (r) => r.source === "wise" && r.currency.toUpperCase() === "USD"),

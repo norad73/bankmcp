@@ -100,6 +100,9 @@ export const config = {
   /** Optional Wise business profile id; auto-detected when omitted. */
   wiseProfileId: env.WISE_PROFILE_ID ?? "",
   wiseAccountLabel: env.WISE_ACCOUNT_LABEL ?? "",
+  /** Mercury read-only API token (include secret-token: prefix). https://docs.mercury.com/docs/getting-started */
+  mercuryApiBase: (env.MERCURY_API_BASE ?? "https://api.mercury.com/api/v1").replace(/\/+$/, ""),
+  mercuryApiToken: env.MERCURY_API_TOKEN ?? "",
   tlsCertPath: env.TLS_CERT_PATH ?? "",
   tlsKeyPath: env.TLS_KEY_PATH ?? "",
   /** True when every secret came from the environment, so the setup page has nothing to do. */

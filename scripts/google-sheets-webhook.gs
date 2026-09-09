@@ -1,5 +1,5 @@
 // BankConnector — fill the "Balances" and "CC" tabs from live bank data.
-// Script version: 0.4.17 (keep in sync with BankConnector app version)
+// Script version: 0.4.19 (keep in sync with BankConnector app version)
 //
 // Setup:
 // 1. Extensions → Apps Script — paste this file into the spreadsheet-bound project.
@@ -32,6 +32,11 @@ const COL = {
 
 const CC_COL = { date: 1, close: 2 };
 
+function log_(message, detail) {
+  var line = detail !== undefined ? message + " " + JSON.stringify(detail) : message;
+  console.log("[BankConnector] " + line);
+}
+
 function onOpen() {
   setupFillButtonMenu();
 }
@@ -48,24 +53,31 @@ function doGet() {
 }
 
 function doPost(e) {
+  log_("doPost started");
   const body = e && e.postData ? JSON.parse(e.postData.contents) : {};
+  log_("doPost body", { action: body.action, date: body.date, fxDate: body.fxDate, eurUsdClose: body.eurUsdClose, source: body.source });
   if (body.action === "fill") {
     const result = fillSheetsImpl_(body);
+    log_("doPost done", { action: result.action, row: result.row, cc: result.cc });
     return json(result);
   }
+  log_("doPost unknown action", body.action);
   return json({ ok: false, error: "Unknown action. Use { action: 'fill' }." });
 }
 
 /** Menu / button — ask BankConnector to fetch balances and POST them back here. */
 function fillBalancesSheet() {
+  log_("fillBalancesSheet started (menu)");
   try {
     const result = triggerBankConnectorFill_();
+    log_("fillBalancesSheet done", { action: result.action, row: result.row, cc: result.cc });
     try {
       const msg = formatFillAlert_(result);
       SpreadsheetApp.getUi().alert(msg);
     } catch (ignore) {}
     return result;
   } catch (err) {
+    log_("fillBalancesSheet failed", { error: String(err.message || err) });
     try { SpreadsheetApp.getUi().alert(String(err.message || err)); } catch (ignore) {}
     throw err;
   }
@@ -91,12 +103,16 @@ function triggerBankConnectorFill_() {
   }
   if (!secret) throw new Error("Set Script property CRON_SECRET (from Render environment)");
 
-  const res = UrlFetchApp.fetch(base + "/cron/sync-balances", {
+  const url = base + "/cron/sync-balances";
+  log_("calling BankConnector", { url: url });
+  const res = UrlFetchApp.fetch(url, {
     method: "post",
     headers: { Authorization: "Bearer " + secret },
     muteHttpExceptions: true,
   });
-  return parseBankConnectorResponse_(res.getContentText(), res.getResponseCode());
+  const code = res.getResponseCode();
+  log_("BankConnector response", { http: code, bytes: res.getContentText().length });
+  return parseBankConnectorResponse_(res.getContentText(), code);
 }
 
 function parseBankConnectorResponse_(text, code) {
@@ -119,9 +135,12 @@ function parseBankConnectorResponse_(text, code) {
 
 function fillSheetsImpl_(body) {
   body = body || {};
+  log_("fillSheetsImpl started", { date: body.date, fxDate: body.fxDate });
   const cc = fillCcSheetImpl_(body);
   const balances = fillBalancesSheetImpl_(body);
-  return Object.assign({}, balances, { cc: cc });
+  const result = Object.assign({}, balances, { cc: cc });
+  log_("fillSheetsImpl done", { balances: { action: balances.action, row: balances.row }, cc: cc });
+  return result;
 }
 
 function fillBalancesSheetImpl_(body) {
@@ -132,12 +151,16 @@ function fillBalancesSheetImpl_(body) {
     return values.some(function (v) { return v !== "" && v !== null && v !== 0; });
   });
 
+  log_("Balances target row", target);
+
   if (target.action === "skip") {
+    log_("Balances skipped", { reason: target.reason, row: target.row });
     return { ok: true, action: "skip", reason: target.reason || "Today already filled", row: target.row, date: today };
   }
 
   const columns = body.columns;
   if (!columns) throw new Error("Missing columns in fill request");
+  log_("Balances writing columns", columns);
 
   if (target.setDate) {
     copyRowFormat_(sheet, target.templateRow, target.row);
@@ -171,9 +194,14 @@ function fillCcSheetImpl_(body) {
     return value !== "" && value !== null && value !== 0;
   });
 
+  log_("CC target row", target);
+
   if (target.action === "skip") {
+    log_("CC skipped", { reason: target.reason, row: target.row });
     return { ok: true, action: "skip", reason: target.reason || "Already filled", row: target.row, date: rateDate, close: close };
   }
+
+  log_("CC writing close", { row: target.row, date: rateDate, close: close });
 
   if (target.setDate) {
     copyRowFormat_(sheet, target.templateRow, target.row);
@@ -241,6 +269,7 @@ function resolveTargetRow_(sheet, today, dateCol, rowIsFilledFn) {
 function writeBalanceValues_(sheet, row, columns) {
   const map = {
     [COL.stripe]: columns.stripe,
+    [COL.mercury]: columns.mercury,
     [COL.airwallexUsd]: columns.airwallexUsd,
     [COL.airwallexEur]: columns.airwallexEur,
     [COL.wiseUsd]: columns.wiseUsd,

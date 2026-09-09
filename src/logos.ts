@@ -8,6 +8,7 @@ const PROVIDER_DOMAINS: Record<string, string> = {
   stripe: "stripe.com",
   paypal: "paypal.com",
   airwallex: "airwallex.com",
+  mercury: "mercury.com",
   enablebanking: "enablebanking.com",
 };
 

@@ -38,6 +38,8 @@ services:
         sync: false
       - key: PAYPAL_SECRET
         sync: false
+      - key: MERCURY_API_TOKEN
+        sync: false
       - key: WISE_API_TOKEN
         sync: false
       - key: WISE_PROFILE_ID

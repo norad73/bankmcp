@@ -14,13 +14,14 @@ import { isPayPalConfigured, listPayPalBalances, PayPalError } from "./paypal.ts
 import { isStripeConfigured, listStripeBalances, StripeError } from "./stripe.ts";
 import { isVivaConfigured, listVivaWallets, VivaError } from "./viva.ts";
 import { isWiseConfigured, listWiseBalances, WiseError } from "./wise.ts";
+import { isMercuryConfigured, listMercuryAccounts, MercuryError } from "./mercury.ts";
 import { ebLog } from "./eb-log.ts";
 import { buildSheetBalancePayload } from "./sheet-balances.ts";
 import { fetchRatesToUsd } from "./fx.ts";
 
 export interface BalanceRow {
   date: string;
-  source: "enablebanking" | "viva" | "airwallex" | "stripe" | "paypal" | "wise";
+  source: "enablebanking" | "viva" | "airwallex" | "stripe" | "paypal" | "wise" | "mercury";
   bank?: string;
   account: string;
   uid: string;
@@ -360,6 +361,31 @@ async function fetchWiseBalances(date: string, opts: FetchBalanceOpts): Promise<
   }
 }
 
+async function fetchMercuryBalances(date: string, opts: FetchBalanceOpts): Promise<BalanceRow[]> {
+  if (!isMercuryConfigured()) return [];
+  if (sourceUsesCacheOnly("mercury:", opts)) {
+    const cached = cachedRowsForPrefix("mercury:", date, (uid, c) => {
+      const id = uid.slice("mercury:".length);
+      return { source: "mercury", account: c.account ?? `Mercury · ${id.slice(0, 8)}`, currency: c.currency ?? "USD" };
+    });
+    if (cached.length) return cached;
+  }
+  try {
+    const accounts = await listMercuryAccounts();
+    return accounts.map((a) => {
+      const uid = `mercury:${a.id}`;
+      const label = a.nickname?.trim() || a.name?.trim() || "Mercury";
+      const base: RowBase = { source: "mercury", account: label, currency: "USD" };
+      const cached = getCachedBalance(uid, date);
+      if (!shouldFetch(uid, date, opts) && cached) return rowFromCache(date, uid, base, cached);
+      return storeRow(uid, { date, ...base, uid, booked: a.currentBalance, available: a.availableBalance }, date);
+    });
+  } catch (err) {
+    const msg = err instanceof MercuryError ? `${err.status}: ${err.body.slice(0, 120)}` : (err as Error).message;
+    return [{ date, source: "mercury", account: "Mercury", uid: "mercury:error", currency: "USD", error: msg }];
+  }
+}
+
 async function fetchPayPalBalances(date: string, opts: FetchBalanceOpts): Promise<BalanceRow[]> {
   if (!isPayPalConfigured()) return [];
   if (sourceUsesCacheOnly("paypal:", opts)) {
@@ -397,18 +423,19 @@ export async function fetchAllBalances(opts: FetchBalanceOpts = {}): Promise<{ r
   if (!isConfigured()) throw new Error("BankConnector is not configured yet.");
 
   const date = athensDate();
-  const [ebRows, vivaRows, airwallexRows, stripeRows, paypalRows, wiseRows] = await Promise.all([
+  const [ebRows, vivaRows, airwallexRows, stripeRows, paypalRows, wiseRows, mercuryRows] = await Promise.all([
     fetchSource("Enable Banking", "enablebanking", "EUR", fetchEnableBankingBalances(date, opts)),
     fetchSource("Viva", "viva", "EUR", fetchVivaBalances(date, opts)),
     fetchSource("Airwallex", "airwallex", "USD", fetchAirwallexBalances(date, opts)),
     fetchSource("Stripe", "stripe", "USD", fetchStripeBalances(date, opts)),
     fetchSource("PayPal", "paypal", "USD", fetchPayPalBalances(date, opts)),
     fetchSource("Wise", "wise", "USD", fetchWiseBalances(date, opts)),
+    fetchSource("Mercury", "mercury", "USD", fetchMercuryBalances(date, opts)),
   ]);
-  const rows = [...ebRows, ...vivaRows, ...airwallexRows, ...stripeRows, ...paypalRows, ...wiseRows];
+  const rows = [...ebRows, ...vivaRows, ...airwallexRows, ...stripeRows, ...paypalRows, ...wiseRows, ...mercuryRows];
 
   if (!rows.length) {
-    throw new Error("No accounts linked yet. Connect a bank or configure Viva/Airwallex/Stripe/PayPal API credentials.");
+    throw new Error("No accounts linked yet. Connect a bank or configure Viva/Airwallex/Stripe/PayPal/Wise/Mercury API credentials.");
   }
 
   return { rows };
