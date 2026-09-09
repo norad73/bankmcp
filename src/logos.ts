@@ -11,9 +11,13 @@ const PROVIDER_DOMAINS: Record<string, string> = {
   enablebanking: "enablebanking.com",
 };
 
+const EUROBANK_LOGO = "/assets/logos/eurobank.png";
+
 const BRAND_LOGOS: Record<string, string> = {
-  eurobank: "/assets/logos/eurobank.png",
-  "eurobank ike": "/assets/logos/eurobank.png",
+  eurobank: EUROBANK_LOGO,
+  "eurobank ike": EUROBANK_LOGO,
+  "eurobank usa branch": EUROBANK_LOGO,
+  "eurobank us branch": EUROBANK_LOGO,
 };
 
 const DOMAIN_ALIASES: Record<string, string> = {
@@ -45,7 +49,7 @@ export async function loadAspspLogos(): Promise<Map<string, string>> {
 
 export function resolveLogo(displaySource: string, rawSource: string, aspspLogos: Map<string, string>): string {
   const raw = rawSource.toLowerCase();
-  const bankName = displaySource.replace(/\s+(IKE|US Branch)$/i, "").trim().toLowerCase();
+  const bankName = displaySource.replace(/\s+(IKE|US(?:A)?\s*Branch)$/i, "").trim().toLowerCase();
 
   const brand = BRAND_LOGOS[bankName] ?? BRAND_LOGOS[displaySource.toLowerCase()];
   if (brand) return brand;
