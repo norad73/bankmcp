@@ -416,7 +416,7 @@ export async function refreshBalanceByUid(uid: string): Promise<void> {
   await fetchAllBalances({ refreshUid: uid });
 }
 
-export async function syncBalancesToSheet(): Promise<{ rows: BalanceRow[] }> {
+export async function syncBalancesToSheet(): Promise<{ rows: BalanceRow[]; sheet?: unknown }> {
   const url = config.googleSheetsWebhookUrl;
   if (!url) throw new Error("Set GOOGLE_SHEETS_WEBHOOK_URL to your Google Apps Script web app URL.");
 
@@ -425,9 +425,15 @@ export async function syncBalancesToSheet(): Promise<{ rows: BalanceRow[] }> {
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ source: "bankconnector", synced_at: new Date().toISOString(), rows }),
+    body: JSON.stringify({ action: "fill", source: "bankconnector", synced_at: new Date().toISOString() }),
   });
   const text = await res.text();
   if (!res.ok) throw new Error(`Google Sheets webhook ${res.status}: ${text.slice(0, 300)}`);
-  return { rows };
+  let sheet: unknown;
+  try {
+    sheet = JSON.parse(text);
+  } catch {
+    sheet = { raw: text.slice(0, 300) };
+  }
+  return { rows, sheet };
 }

@@ -18,6 +18,7 @@ import { VERSION } from "./version.ts";
 import { seedBalanceCacheForLabel } from "./seed-cache.ts";
 import { ebLog } from "./eb-log.ts";
 import { probeEnableBankingSessions, readEbDebugLogTail, summarizeSessionCreation } from "./investigate-eb.ts";
+import { buildSheetBalancePayload } from "./sheet-balances.ts";
 
 export function createApp() {
   const log = (msg: string, extra?: unknown) => console.log(`[bank ${new Date().toISOString()}] ${msg}`, extra ?? "");
@@ -222,6 +223,17 @@ export function createApp() {
         res.json({ ok: true, as_of: athensDate(), count: result.rows.length });
       } catch (err) {
         log("refresh-balances failed", (err as Error).message);
+        res.status(500).json({ error: (err as Error).message });
+      }
+    });
+
+    app.get("/cron/sheet-balances", async (req, res) => {
+      if (!cronAuth(req, res)) return;
+      try {
+        const [result, fx] = await Promise.all([fetchAllBalances(), fetchRatesToUsd(["EUR", "USD", "GBP"])]);
+        res.json({ ok: true, ...buildSheetBalancePayload(result.rows, fx) });
+      } catch (err) {
+        log("sheet-balances failed", (err as Error).message);
         res.status(500).json({ error: (err as Error).message });
       }
     });
