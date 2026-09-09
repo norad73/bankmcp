@@ -144,6 +144,17 @@ export class Store {
     return Object.values(this.data.sessions);
   }
 
+  setSessionLabel(sessionId: string, label: string): boolean {
+    let ok = false;
+    this.update((d) => {
+      const session = d.sessions[sessionId];
+      if (!session) return;
+      session.label = label.trim() || undefined;
+      ok = true;
+    });
+    return ok;
+  }
+
   addPendingAuth(p: PendingAuth): void {
     this.update((d) => {
       const cutoff = Date.now() - 60 * 60 * 1000;
