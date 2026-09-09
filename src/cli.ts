@@ -7,7 +7,7 @@ import { eb, EnableBankingError } from "./enablebanking.ts";
 import { hashPassword } from "./auth.ts";
 import { store } from "./store.ts";
 import { daysLeft } from "./data.ts";
-import { seedBalanceCacheForLabel } from "./seed-cache.ts";
+import { clearBalanceCacheForLabel, seedBalanceCacheForLabel } from "./seed-cache.ts";
 
 const [command, ...args] = process.argv.slice(2);
 
@@ -74,19 +74,31 @@ switch (command) {
   }
   case "seed-cache": {
     const sessionLabel = readFlag("label");
-    const available = readNumberFlag("available");
-    if (!sessionLabel || available === undefined) {
-      console.error("Usage: node src/cli.ts seed-cache --label \"Eurobank IKE\" --available 9844.24 [--currency EUR] [--booked N] [--account NAME] [--uid UID]");
+    const clear = args.includes("--clear");
+    const account = readFlag("account");
+    const accountUid = readFlag("uid");
+    if (!sessionLabel) {
+      console.error("Usage: node src/cli.ts seed-cache --label \"Eurobank IKE\" --available 9844.24 [--account 02] | --clear [--account NAME]");
       process.exit(1);
     }
     try {
+      if (clear) {
+        const cleared = clearBalanceCacheForLabel(sessionLabel, account, accountUid);
+        for (const row of cleared) console.log(`Cleared cache for ${sessionLabel} / ${row.account} (${row.accountUid})`);
+        break;
+      }
+      const available = readNumberFlag("available");
+      if (available === undefined) {
+        console.error("Usage: node src/cli.ts seed-cache --label \"Eurobank IKE\" --available 9844.24 [--account 02]");
+        process.exit(1);
+      }
       const seeded = seedBalanceCacheForLabel({
         sessionLabel,
         available,
         booked: readNumberFlag("booked"),
         currency: readFlag("currency"),
-        account: readFlag("account"),
-        accountUid: readFlag("uid"),
+        account,
+        accountUid,
       });
       for (const row of seeded) console.log(`Cached ${available} for ${sessionLabel} / ${row.account} (${row.accountUid})`);
     } catch (err) {

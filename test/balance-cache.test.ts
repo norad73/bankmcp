@@ -22,23 +22,25 @@ test("balance cache reuses entries for the same day only", async () => {
   else delete process.env.DATA_DIR;
 });
 
-test("seedBalanceCache picks the named account when a session has several", async () => {
+test("seedBalanceCache requires account when a session has several", async () => {
   const dir = mkdtempSync(join(tmpdir(), "bank-"));
   const prev = process.env.DATA_DIR;
   process.env.DATA_DIR = dir;
   const { seedBalanceCache, getCachedBalance } = await import("../src/balance-cache.ts");
 
-  const seeded = seedBalanceCache(
-    () => [
-      { uid: "a1", displayName: "02", currency: "EUR" },
-      { uid: "a2", displayName: "ΑΛΕΞΑΝΔΡΟΣ", currency: "EUR" },
-    ],
-    { sessionLabel: "Eurobank IKE", available: 9844.24, currency: "EUR" },
+  const accounts = () => [
+    { uid: "a1", displayName: "02", currency: "EUR" },
+    { uid: "a2", displayName: "ΑΛΕΞΑΝΔΡΟΣ", currency: "EUR" },
+  ];
+
+  assert.throws(
+    () => seedBalanceCache(accounts, { sessionLabel: "Eurobank IKE", available: 9844.24, currency: "EUR" }),
+    /Multiple accounts match/,
   );
 
-  assert.equal(seeded.length, 1);
-  assert.equal(seeded[0]?.accountUid, "a2");
-  assert.equal(getCachedBalance("a2")?.available, 9844.24);
+  const seeded = seedBalanceCache(accounts, { sessionLabel: "Eurobank IKE", available: 9844.24, currency: "EUR", account: "02" });
+  assert.equal(seeded[0]?.accountUid, "a1");
+  assert.equal(getCachedBalance("a1")?.available, 9844.24);
 
   if (prev) process.env.DATA_DIR = prev;
   else delete process.env.DATA_DIR;

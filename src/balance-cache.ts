@@ -47,6 +47,13 @@ export function getCachedBalance(accountUid: string, date = athensDate()): Cache
   return entry?.date === date ? entry : undefined;
 }
 
+export function clearCachedBalance(accountUid: string): void {
+  const data = load();
+  if (!data.accounts[accountUid]) return;
+  delete data.accounts[accountUid];
+  save(data);
+}
+
 export function setCachedBalance(accountUid: string, input: Omit<CachedBalance, "date" | "fetchedAt"> & { date?: string; fetchedAt?: string }): void {
   const data = load();
   data.accounts[accountUid] = {
@@ -89,8 +96,7 @@ export function seedBalanceCache(
     const needle = input.account.toLowerCase();
     accounts = accounts.filter((a) => a.displayName.toLowerCase().includes(needle));
   } else if (accounts.length > 1) {
-    const primary = accounts.filter((a) => !/^\d+$/.test(a.displayName.trim()));
-    if (primary.length === 1) accounts = primary;
+    throw new Error(`Multiple accounts match (${accounts.map((a) => a.displayName).join(", ")}); pass --account or --uid`);
   }
 
   if (!accounts.length) throw new Error("No matching account found to seed");
