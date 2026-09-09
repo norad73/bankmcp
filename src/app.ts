@@ -263,7 +263,7 @@ export function createApp() {
       try {
         const result = await syncBalancesToSheet();
         log(`sync-balances: ${result.rows.length} row(s) sent to Google Sheets`);
-        res.json({ ok: true, count: result.rows.length });
+        res.json({ ok: true, count: result.rows.length, ...result.sheet });
       } catch (err) {
         log("sync-balances failed", (err as Error).message);
         res.status(500).json({ error: (err as Error).message });

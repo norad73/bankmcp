@@ -15,6 +15,8 @@ import { isStripeConfigured, listStripeBalances, StripeError } from "./stripe.ts
 import { isVivaConfigured, listVivaWallets, VivaError } from "./viva.ts";
 import { isWiseConfigured, listWiseBalances, WiseError } from "./wise.ts";
 import { ebLog } from "./eb-log.ts";
+import { buildSheetBalancePayload } from "./sheet-balances.ts";
+import { fetchRatesToUsd } from "./fx.ts";
 
 export interface BalanceRow {
   date: string;
@@ -416,24 +418,34 @@ export async function refreshBalanceByUid(uid: string): Promise<void> {
   await fetchAllBalances({ refreshUid: uid });
 }
 
-export async function syncBalancesToSheet(): Promise<{ rows: BalanceRow[]; sheet?: unknown }> {
+export async function syncBalancesToSheet(): Promise<{ rows: BalanceRow[]; sheet: Record<string, unknown> }> {
   const url = config.googleSheetsWebhookUrl;
   if (!url) throw new Error("Set GOOGLE_SHEETS_WEBHOOK_URL to your Google Apps Script web app URL.");
 
-  const { rows } = await fetchAllBalances({ force: true });
+  const [balanceResult, fx] = await Promise.all([
+    fetchAllBalances({ force: true }),
+    fetchRatesToUsd(["EUR", "USD", "GBP"]),
+  ]);
+  const { rows } = balanceResult;
+  const payload = buildSheetBalancePayload(rows, fx);
 
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "fill", source: "bankconnector", synced_at: new Date().toISOString() }),
+    body: JSON.stringify({
+      action: "fill",
+      source: "bankconnector",
+      synced_at: new Date().toISOString(),
+      date: payload.date,
+      columns: payload.columns,
+      fxDate: payload.fxDate,
+    }),
   });
   const text = await res.text();
   if (!res.ok) throw new Error(`Google Sheets webhook ${res.status}: ${text.slice(0, 300)}`);
-  let sheet: unknown;
   try {
-    sheet = JSON.parse(text);
+    return { rows, sheet: JSON.parse(text) as Record<string, unknown> };
   } catch {
-    sheet = { raw: text.slice(0, 300) };
+    throw new Error(`Google Sheets webhook returned non-JSON: ${text.slice(0, 200)}`);
   }
-  return { rows, sheet };
 }
