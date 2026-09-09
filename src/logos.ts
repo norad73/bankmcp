@@ -11,9 +11,12 @@ const PROVIDER_DOMAINS: Record<string, string> = {
   enablebanking: "enablebanking.com",
 };
 
+const BRAND_LOGOS: Record<string, string> = {
+  eurobank: "https://play-lh.googleusercontent.com/mhwT4FDSCeEhG_oGyiXQojL_3kcgP8N9uzl3FMlAU30tSygwz5bh1AQeXRhBawJZQpDRzdIhUHpG3EpUoEq-cQ",
+  "eurobank ike": "https://play-lh.googleusercontent.com/mhwT4FDSCeEhG_oGyiXQojL_3kcgP8N9uzl3FMlAU30tSygwz5bh1AQeXRhBawJZQpDRzdIhUHpG3EpUoEq-cQ",
+};
+
 const DOMAIN_ALIASES: Record<string, string> = {
-  eurobank: "eurobank.gr",
-  "eurobank ike": "eurobank.gr",
   wise: "wise.com",
 };
 
@@ -45,6 +48,9 @@ export function resolveLogo(displaySource: string, rawSource: string, aspspLogos
   if (PROVIDER_DOMAINS[raw]) return favicon(PROVIDER_DOMAINS[raw]);
 
   const bankName = displaySource.replace(/\s+(IKE|US Branch)$/i, "").trim().toLowerCase();
+  const brand = BRAND_LOGOS[bankName] ?? BRAND_LOGOS[displaySource.toLowerCase()];
+  if (brand) return brand;
+
   const fromEb = aspspLogos.get(bankName) ?? aspspLogos.get(displaySource.toLowerCase());
   if (fromEb) return fromEb;
 
