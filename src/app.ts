@@ -123,14 +123,16 @@ export function createApp() {
         fetchAllBalances(),
         fetchRatesToUsd(["EUR", "USD", "GBP"]),
       ]);
-      const rows = result.rows.map((r) => ({
-        source: r.source,
-        account: r.account,
-        currency: r.currency,
-        booked: r.booked,
-        available: r.available,
-        error: r.error,
-      }));
+      const rows = result.rows
+        .filter((r) => r.source !== "airwallex" || ["USD", "EUR"].includes(r.currency.toUpperCase()))
+        .map((r) => ({
+          source: r.source,
+          account: r.account,
+          currency: r.currency,
+          booked: r.booked,
+          available: r.available,
+          error: r.error,
+        }));
       res.type("html").send(balancesPage({
         asOf: isoDate(),
         fetchedAt: new Date().toISOString(),
