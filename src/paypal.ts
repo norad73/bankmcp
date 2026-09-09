@@ -59,7 +59,7 @@ async function getAccessToken(): Promise<string> {
   return data.access_token;
 }
 
-async function paypalGet(path: string): Promise<unknown> {
+async function paypalGet(path: string, retried = false): Promise<unknown> {
   const token = await getAccessToken();
   const res = await fetch(`${config.paypalApiBase}${path}`, {
     headers: {
@@ -68,7 +68,13 @@ async function paypalGet(path: string): Promise<unknown> {
     },
   });
   const text = await res.text();
-  if (!res.ok) throw new PayPalError(res.status, text);
+  if (!res.ok) {
+    if (res.status === 403 && !retried) {
+      cachedToken = undefined;
+      return paypalGet(path, true);
+    }
+    throw new PayPalError(res.status, text);
+  }
   return text ? JSON.parse(text) : {};
 }
 

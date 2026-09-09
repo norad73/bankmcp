@@ -1,6 +1,6 @@
 // HTTP entry point: the MCP endpoint behind OAuth, the OAuth server itself,
 // the Enable Banking redirect target, and a status page.
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import express from "express";
 import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/sdk/server/auth/router.js";
 import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
@@ -8,8 +8,8 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { config, isConfigured, setupProblems } from "./config.ts";
 import { eb, EnableBankingError } from "./enablebanking.ts";
 import { store } from "./store.ts";
-import { SingleUserProvider } from "./auth.ts";
-import { connectedPage, failedPage, loginPage, privacyPage, setupPage, signInFailedPage, statusPage, termsPage } from "./pages.ts";
+import { SingleUserProvider, verifyPassword } from "./auth.ts";
+import { balancesLoginPage, balancesPage, connectedPage, failedPage, loginPage, privacyPage, setupPage, signInFailedPage, statusPage, termsPage } from "./pages.ts";
 import { applySetup, setupAvailable } from "./setup.ts";
 import { createServer, VERSION } from "./mcp.ts";
 import { startWatcher } from "./watcher.ts";
@@ -104,6 +104,72 @@ export function createApp(opts: AppOptions) {
   });
 
   app.get("/healthz", (_req, res) => void res.json({ ok: true, version: VERSION, configured: isConfigured() }));
+
+  const BALANCES_COOKIE = "bankmcp_balances";
+  const BALANCES_TTL = 24 * 60 * 60;
+
+  const balancesSecret = () => config.adminPasswordHash || config.adminPassword || config.cronSecret || "";
+
+  const signBalancesCookie = () => {
+    const exp = Math.floor(Date.now() / 1000) + BALANCES_TTL;
+    const sig = createHmac("sha256", balancesSecret()).update(String(exp)).digest("base64url");
+    return `${exp}.${sig}`;
+  };
+
+  const verifyBalancesCookie = (value: string | undefined) => {
+    if (!value || !balancesSecret()) return false;
+    const [expStr, sig] = value.split(".");
+    const exp = Number(expStr);
+    if (!Number.isFinite(exp) || exp < Math.floor(Date.now() / 1000)) return false;
+    const expected = createHmac("sha256", balancesSecret()).update(String(exp)).digest("base64url");
+    const a = Buffer.from(sig ?? "");
+    const b = Buffer.from(expected);
+    return a.length === b.length && timingSafeEqual(a, b);
+  };
+
+  const readCookie = (req: express.Request, name: string) => {
+    const header = req.headers.cookie;
+    if (!header) return undefined;
+    for (const part of header.split(";")) {
+      const eq = part.indexOf("=");
+      if (eq <= 0) continue;
+      if (part.slice(0, eq).trim() !== name) continue;
+      return decodeURIComponent(part.slice(eq + 1).trim());
+    }
+    return undefined;
+  };
+
+  const balancesAuthed = (req: express.Request) => verifyBalancesCookie(readCookie(req, BALANCES_COOKIE));
+
+  app.get("/balances", async (req, res) => {
+    if (!balancesAuthed(req)) return void res.type("html").send(balancesLoginPage());
+    if (!isConfigured()) return void res.type("html").send(balancesPage({ asOf: isoDate(), fetchedAt: new Date().toISOString(), rows: [], error: "BankMCP is not configured yet." }));
+    try {
+      const result = await fetchAllBalances();
+      res.type("html").send(balancesPage({
+        asOf: isoDate(),
+        fetchedAt: new Date().toISOString(),
+        rows: result.rows.map((r) => ({
+          source: r.source,
+          account: r.account,
+          currency: r.currency,
+          booked: r.booked,
+          available: r.available,
+          error: r.error,
+        })),
+      }));
+    } catch (err) {
+      log("balances page failed", (err as Error).message);
+      res.type("html").send(balancesPage({ asOf: isoDate(), fetchedAt: new Date().toISOString(), rows: [], error: (err as Error).message }));
+    }
+  });
+
+  app.post("/balances/login", express.urlencoded({ extended: false }), (req, res) => {
+    const password = String((req.body as Record<string, string | undefined>).password ?? "");
+    if (!verifyPassword(password)) return void res.status(401).type("html").send(balancesLoginPage({ error: "Wrong password." }));
+    res.cookie(BALANCES_COOKIE, signBalancesCookie(), { httpOnly: true, sameSite: "lax", secure: req.secure, maxAge: BALANCES_TTL * 1000, path: "/" });
+    res.redirect(303, "/balances");
+  });
 
   if (opts.remote && config.cronSecret) {
     const cronAuth = (req: express.Request, res: express.Response) => {

@@ -69,7 +69,11 @@ async function getAccessToken(): Promise<string> {
   };
   if (config.airwallexAccountId) headers["x-login-as"] = config.airwallexAccountId;
 
-  const res = await fetch(`${config.airwallexApiBase}/api/v1/authentication/login`, { method: "POST", headers });
+  const res = await fetch(`${config.airwallexApiBase}/api/v1/authentication/login`, {
+    method: "POST",
+    headers,
+    body: "",
+  });
   const text = await res.text();
   if (!res.ok) throw new AirwallexError(res.status, text);
 

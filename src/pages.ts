@@ -180,3 +180,77 @@ export const termsPage = () =>
     `<p>Personal software run by the person who deployed it, for their own non-commercial use, under Enable Banking's terms for individual use of their production environment. The operator is solely responsible for this instance.</p>
      <p>Use at your own risk. The software is provided as is, without warranty of any kind, under the MIT licence. Its authors accept no liability for its use and are not a party to the operator's agreements with Enable Banking or any bank.</p>`,
   );
+
+export interface BalanceDisplayRow {
+  source: string;
+  account: string;
+  currency: string;
+  booked?: number;
+  available?: number;
+  error?: string;
+}
+
+const fmtMoney = (amount: number | undefined, currency: string) => {
+  if (amount === undefined) return "—";
+  try {
+    return new Intl.NumberFormat("en-GB", { style: "currency", currency, maximumFractionDigits: 2 }).format(amount);
+  } catch {
+    return `${amount.toFixed(2)} ${currency}`;
+  }
+};
+
+function wideShell(title: string, body: string, opts: { kind?: Kind; pill?: string } = {}): string {
+  const page = shell(title, body, opts);
+  return page.replace(
+    ".wrap{max-width:460px",
+    ".wrap{max-width:960px",
+  ).replace(
+    "</style>",
+    `table.bal{width:100%;border-collapse:collapse;margin:16px 0 8px;font-size:14px}
+table.bal th,table.bal td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+table.bal th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600}
+table.bal td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+table.bal tr.err td{color:var(--err)}
+.actions{margin-top:16px}
+.actions a{font-size:14px;color:var(--muted)}
+</style>`,
+  );
+}
+
+export function balancesLoginPage(opts: { error?: string } = {}): string {
+  return shell(
+    "Balances",
+    `${opts.error ? `<p class="error">${esc(opts.error)}</p>` : ""}
+     <p class="muted">Enter the admin password to view live balances from all connected banks.</p>
+     <form method="post" action="/balances/login">
+       <label for="pw">Password</label>
+       <input id="pw" type="password" name="password" autofocus autocomplete="current-password" required>
+       <button type="submit">View balances</button>
+     </form>`,
+    { kind: "neutral", pill: "Sign in" },
+  );
+}
+
+export function balancesPage(input: { asOf: string; fetchedAt: string; rows: BalanceDisplayRow[]; error?: string }): string {
+  const ok = input.rows.filter((r) => !r.error);
+  const failed = input.rows.filter((r) => r.error);
+  const rows = [...ok, ...failed];
+  const table = rows.length
+    ? `<table class="bal"><thead><tr><th>Source</th><th>Account</th><th>Currency</th><th class="num">Booked</th><th class="num">Available</th></tr></thead><tbody>${rows
+        .map((r) => {
+          const cls = r.error ? " class=\"err\"" : "";
+          const booked = r.error ? esc(r.error) : fmtMoney(r.booked, r.currency);
+          const available = r.error ? "—" : fmtMoney(r.available, r.currency);
+          return `<tr${cls}><td>${esc(r.source)}</td><td>${esc(r.account)}</td><td>${esc(r.currency)}</td><td class="num">${booked}</td><td class="num">${available}</td></tr>`;
+        })
+        .join("")}</tbody></table>`
+    : `<p class="muted">No accounts linked yet.</p>`;
+  return wideShell(
+    "Balances",
+    `${input.error ? `<p class="error">${esc(input.error)}</p>` : ""}
+     <p class="muted">As of ${esc(fmtDate(input.asOf))} · fetched ${esc(new Date(input.fetchedAt).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }))}</p>
+     ${table}
+     <p class="actions"><a href="/balances">↻ Refresh</a></p>`,
+    { kind: failed.length && !ok.length ? "error" : failed.length ? "neutral" : "ok", pill: `${ok.length} account${ok.length === 1 ? "" : "s"}` },
+  );
+}
