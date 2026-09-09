@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildSheetBalanceColumns } from "../src/sheet-balances.ts";
+import { buildSheetBalanceColumns, buildSheetBalancePayload } from "../src/sheet-balances.ts";
 import type { BalanceRow } from "../src/sync-sheets.ts";
 
 const fx = { date: "2026-09-08", toUsd: { EUR: 1.1, USD: 1 } };
@@ -18,4 +18,10 @@ test("buildSheetBalanceColumns maps sources to sheet columns in USD", () => {
   assert.equal(cols.viva, 110);
   assert.equal(cols.eurobank, 1644);
   assert.equal(cols.eurobankIke, 10829);
+});
+
+test("buildSheetBalancePayload includes EUR/USD close for CC tab", () => {
+  const payload = buildSheetBalancePayload(rows, fx, "2026-09-09");
+  assert.equal(payload.fxDate, "2026-09-08");
+  assert.equal(payload.eurUsdClose, 1.1);
 });

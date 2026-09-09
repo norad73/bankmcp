@@ -18,7 +18,14 @@ export interface SheetBalanceColumns {
 export interface SheetBalancePayload {
   date: string;
   columns: SheetBalanceColumns;
+  /** ECB rate date used for conversion (YYYY-MM-DD). */
   fxDate?: string;
+  /** EUR/USD close — USD per 1 EUR (CC tab column B). */
+  eurUsdClose?: number;
+}
+
+function roundRate(n: number): number {
+  return Math.round(n * 100000) / 100000;
 }
 
 function rowAmount(r: BalanceRow): number | undefined {
@@ -64,5 +71,11 @@ export function buildSheetBalanceColumns(rows: BalanceRow[], fx: FxRates | undef
 }
 
 export function buildSheetBalancePayload(rows: BalanceRow[], fx: FxRates | undefined, date = athensDate()): SheetBalancePayload {
-  return { date, columns: buildSheetBalanceColumns(rows, fx), fxDate: fx?.date };
+  const eurUsd = fx?.toUsd.EUR;
+  return {
+    date,
+    columns: buildSheetBalanceColumns(rows, fx),
+    fxDate: fx?.date,
+    eurUsdClose: eurUsd !== undefined ? roundRate(eurUsd) : undefined,
+  };
 }

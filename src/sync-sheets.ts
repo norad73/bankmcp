@@ -439,6 +439,7 @@ export async function syncBalancesToSheet(): Promise<{ rows: BalanceRow[]; sheet
       date: payload.date,
       columns: payload.columns,
       fxDate: payload.fxDate,
+      eurUsdClose: payload.eurUsdClose,
     }),
   });
   const text = await res.text();
