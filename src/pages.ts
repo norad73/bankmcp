@@ -257,8 +257,8 @@ export function balancesPage(input: { asOf: string; fetchedAt: string; rows: Bal
           return `<tr${cls}>${logo}<td>${esc(r.source)}</td><td>${esc(r.account)}</td><td>${esc(r.currency)}</td><td class="${status.cls}">${esc(status.label)}</td><td class="num">${available}</td><td class="num">${usdEquiv}</td></tr>`;
         })
         .join("")}</tbody>${totals.length ? `<tfoot>${totals
-        .map(([currency, amount]) => `<tr class="total"><td></td><td colspan="3">Total</td><td></td><td class="num">${fmtMoney(amount, currency)}</td><td class="num">${fmtUsd(usd(amount, currency))}</td></tr>`)
-        .join("")}${input.fx ? `<tr class="total"><td colspan="6">Grand total (USD)</td><td class="num">${fmtMoney(totalUsd, "USD")}</td></tr>` : ""}</tfoot>` : ""}</table>`
+        .map(([currency, amount]) => `<tr class="total"><td></td><td colspan="2">Total</td><td>${esc(currency)}</td><td></td><td class="num">${fmtMoney(amount, currency)}</td><td class="num">${fmtUsd(usd(amount, currency))}</td></tr>`)
+        .join("")}${input.fx ? `<tr class="total"><td></td><td colspan="2">Grand total</td><td>USD</td><td></td><td class="num">—</td><td class="num">${fmtMoney(totalUsd, "USD")}</td></tr>` : ""}</tfoot>` : ""}</table>`
     : `<p class="muted">No accounts linked yet.</p>`;
   return wideShell(
     "Balances",
