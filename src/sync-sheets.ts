@@ -9,10 +9,11 @@ import { isAirwallexConfigured, listAirwallexBalances, AirwallexError } from "./
 import { isPayPalConfigured, listPayPalBalances, PayPalError } from "./paypal.ts";
 import { isStripeConfigured, listStripeBalances, StripeError } from "./stripe.ts";
 import { isVivaConfigured, listVivaWallets, VivaError } from "./viva.ts";
+import { isWiseConfigured, listWiseBalances, WiseError } from "./wise.ts";
 
 export interface BalanceRow {
   date: string;
-  source: "enablebanking" | "viva" | "airwallex" | "stripe" | "paypal";
+  source: "enablebanking" | "viva" | "airwallex" | "stripe" | "paypal" | "wise";
   /** Bank name for Enable Banking rows (Eurobank, Wise, …). */
   bank?: string;
   account: string;
@@ -120,7 +121,7 @@ async function fetchEnableBankingAccountRow(date: string, accountUid: string, ba
 
 async function fetchEnableBankingBalances(date: string): Promise<BalanceRow[]> {
   const s = store();
-  const sessions = s.sessions();
+  const sessions = s.sessions().filter((session) => !(isWiseConfigured() && session.bank.name.toLowerCase() === "wise"));
   if (!sessions.length) return [];
 
   const rows: BalanceRow[] = [];
@@ -265,6 +266,25 @@ async function fetchStripeBalances(date: string): Promise<BalanceRow[]> {
   }
 }
 
+async function fetchWiseBalances(date: string): Promise<BalanceRow[]> {
+  if (!isWiseConfigured()) return [];
+  try {
+    const { profileId, profileLabel, balances } = await listWiseBalances();
+    return balances.map((b) => ({
+      date,
+      source: "wise" as const,
+      account: b.name ? `${profileLabel} · ${b.name}` : `${profileLabel} · ${b.currency}`,
+      uid: `wise:${profileId}:${b.currency}`,
+      currency: b.currency,
+      booked: b.available,
+      available: b.available,
+    }));
+  } catch (err) {
+    const msg = err instanceof WiseError ? `${err.status}: ${err.body.slice(0, 120)}` : (err as Error).message;
+    return [{ date, source: "wise", account: "Wise", uid: "wise:error", currency: "USD", error: msg }];
+  }
+}
+
 async function fetchPayPalBalances(date: string): Promise<BalanceRow[]> {
   if (!isPayPalConfigured()) return [];
   try {
@@ -299,14 +319,15 @@ export async function fetchAllBalances(): Promise<{ rows: BalanceRow[] }> {
   if (!isConfigured()) throw new Error("BankConnector is not configured yet.");
 
   const date = isoDate();
-  const [ebRows, vivaRows, airwallexRows, stripeRows, paypalRows] = await Promise.all([
+  const [ebRows, vivaRows, airwallexRows, stripeRows, paypalRows, wiseRows] = await Promise.all([
     fetchSource("Enable Banking", "enablebanking", "EUR", fetchEnableBankingBalances(date)),
     fetchSource("Viva", "viva", "EUR", fetchVivaBalances(date)),
     fetchSource("Airwallex", "airwallex", "USD", fetchAirwallexBalances(date)),
     fetchSource("Stripe", "stripe", "USD", fetchStripeBalances(date)),
     fetchSource("PayPal", "paypal", "USD", fetchPayPalBalances(date)),
+    fetchSource("Wise", "wise", "USD", fetchWiseBalances(date)),
   ]);
-  const rows = [...ebRows, ...vivaRows, ...airwallexRows, ...stripeRows, ...paypalRows];
+  const rows = [...ebRows, ...vivaRows, ...airwallexRows, ...stripeRows, ...paypalRows, ...wiseRows];
 
   if (!rows.length) {
     throw new Error("No accounts linked yet. Connect a bank or configure Viva/Airwallex/Stripe/PayPal API credentials.");

@@ -91,6 +91,12 @@ export const config = {
   paypalApiBase: (env.PAYPAL_API_BASE ?? "https://api-m.paypal.com").replace(/\/+$/, ""),
   paypalClientId: env.PAYPAL_CLIENT_ID ?? "",
   paypalSecret: env.PAYPAL_SECRET ?? "",
+  /** Wise personal API token (Read only). https://docs.wise.com/guides/developer/auth-and-security/personal-api-token */
+  wiseApiBase: (env.WISE_API_BASE ?? "https://api.wise.com").replace(/\/+$/, ""),
+  wiseApiToken: env.WISE_API_TOKEN ?? "",
+  /** Optional Wise business profile id; auto-detected when omitted. */
+  wiseProfileId: env.WISE_PROFILE_ID ?? "",
+  wiseAccountLabel: env.WISE_ACCOUNT_LABEL ?? "",
   tlsCertPath: env.TLS_CERT_PATH ?? "",
   tlsKeyPath: env.TLS_KEY_PATH ?? "",
   /** True when every secret came from the environment, so the setup page has nothing to do. */

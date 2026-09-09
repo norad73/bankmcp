@@ -9,6 +9,7 @@ import { balancesPage, connectedPage, failedPage, privacyPage, setupPage, siteLo
 import { applySetup, setupAvailable } from "./setup.ts";
 import { fetchRatesToUsd } from "./fx.ts";
 import { fetchAllBalances, syncBalancesToSheet } from "./sync-sheets.ts";
+import { isWiseConfigured } from "./wise.ts";
 import { isoDate } from "./data.ts";
 import { VERSION } from "./version.ts";
 
@@ -186,6 +187,9 @@ export function createApp() {
     const psuTypeDefault = bankKey === "wise" ? "business" : "personal";
     const psuType = String(req.query.psu_type ?? req.query.customer_type ?? psuTypeDefault).toLowerCase() === "business" ? "business" : "personal";
     const label = String(req.query.label ?? "").trim() || undefined;
+    if (bankKey === "wise" && isWiseConfigured()) {
+      return void res.status(400).type("html").send(failedPage("Wise is configured via WISE_API_TOKEN on this server. Enable Banking connect is not used for Wise."));
+    }
     try {
       const findBank = (list: Awaited<ReturnType<typeof eb.listAspsps>>) =>
         list.find((b) => b.name === bank) ?? list.find((b) => b.name.toLowerCase() === bankKey);
