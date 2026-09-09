@@ -1,6 +1,8 @@
 // The few HTML pages this server shows a human: the OAuth sign-in, the
 // result of a bank connection, and a status page. No external assets.
 import { config } from "./config.ts";
+import type { FxRates } from "./fx.ts";
+import { amountInUsd } from "./fx.ts";
 
 export const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
@@ -245,27 +247,32 @@ function totalsByCurrency(rows: BalanceDisplayRow[]) {
   return [...totals.entries()].sort(([a], [b]) => a.localeCompare(b));
 }
 
-export function balancesPage(input: { asOf: string; fetchedAt: string; rows: BalanceDisplayRow[]; error?: string }): string {
+export function balancesPage(input: { asOf: string; fetchedAt: string; rows: BalanceDisplayRow[]; fx?: FxRates; error?: string }): string {
   const ok = input.rows.filter((r) => !r.error && hasBalance(r));
   const failed = input.rows.filter((r) => r.error);
   const rows = [...ok, ...failed];
   const totals = totalsByCurrency(ok);
+  const usd = (amount: number | undefined, currency: string) => amountInUsd(amount, currency, input.fx);
+  const fmtUsd = (amount: number | undefined) => (amount === undefined ? "—" : fmtMoney(amount, "USD"));
+  const totalUsd = ok.reduce((sum, r) => sum + (usd(r.available, r.currency) ?? 0), 0);
+  const fxNote = input.fx?.date ? ` · FX ${esc(input.fx.date)} (ECB)` : "";
   const table = rows.length
-    ? `<table class="bal"><thead><tr><th>Source</th><th>Account</th><th>Currency</th><th class="num">Booked</th><th class="num">Available</th></tr></thead><tbody>${rows
+    ? `<table class="bal"><thead><tr><th>Source</th><th>Account</th><th>Currency</th><th class="num">Booked</th><th class="num">Available</th><th class="num">USD equiv</th></tr></thead><tbody>${rows
         .map((r) => {
           const cls = r.error ? " class=\"err\"" : "";
           const booked = r.error ? esc(r.error) : fmtMoney(r.booked, r.currency);
           const available = r.error ? "—" : fmtMoney(r.available, r.currency);
-          return `<tr${cls}><td>${esc(r.source)}</td><td>${esc(r.account)}</td><td>${esc(r.currency)}</td><td class="num">${booked}</td><td class="num">${available}</td></tr>`;
+          const usdEquiv = r.error ? "—" : fmtUsd(usd(r.available, r.currency));
+          return `<tr${cls}><td>${esc(r.source)}</td><td>${esc(r.account)}</td><td>${esc(r.currency)}</td><td class="num">${booked}</td><td class="num">${available}</td><td class="num">${usdEquiv}</td></tr>`;
         })
         .join("")}</tbody>${totals.length ? `<tfoot>${totals
-        .map(([currency, t]) => `<tr class="total"><td colspan="2">Total</td><td>${esc(currency)}</td><td class="num">${fmtMoney(t.booked, currency)}</td><td class="num">${fmtMoney(t.available, currency)}</td></tr>`)
-        .join("")}</tfoot>` : ""}</table>`
+        .map(([currency, t]) => `<tr class="total"><td colspan="2">Total</td><td>${esc(currency)}</td><td class="num">${fmtMoney(t.booked, currency)}</td><td class="num">${fmtMoney(t.available, currency)}</td><td class="num">${fmtUsd(usd(t.available, currency))}</td></tr>`)
+        .join("")}${input.fx ? `<tr class="total"><td colspan="5">Grand total (USD)</td><td class="num">${fmtMoney(totalUsd, "USD")}</td></tr>` : ""}</tfoot>` : ""}</table>`
     : `<p class="muted">No non-zero balances.</p>`;
   return wideShell(
     "Balances",
     `${input.error ? `<p class="error">${esc(input.error)}</p>` : ""}
-     <p class="muted">As of ${esc(fmtDate(input.asOf))} · fetched ${esc(new Date(input.fetchedAt).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }))}</p>
+     <p class="muted">As of ${esc(fmtDate(input.asOf))} · fetched ${esc(new Date(input.fetchedAt).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }))}${fxNote}</p>
      ${table}
      <p class="actions"><a href="/balances">↻ Refresh</a></p>`,
     { kind: failed.length && !ok.length ? "error" : failed.length ? "neutral" : "ok", pill: `${ok.length} account${ok.length === 1 ? "" : "s"}` },

@@ -13,6 +13,7 @@ import { balancesLoginPage, balancesPage, connectedPage, failedPage, loginPage, 
 import { applySetup, setupAvailable } from "./setup.ts";
 import { createServer, VERSION } from "./mcp.ts";
 import { startWatcher } from "./watcher.ts";
+import { fetchRatesToUsd } from "./fx.ts";
 import { fetchAllBalances, syncBalancesToSheet } from "./sync-sheets.ts";
 import { isoDate } from "./data.ts";
 
@@ -146,17 +147,20 @@ export function createApp(opts: AppOptions) {
     if (!isConfigured()) return void res.type("html").send(balancesPage({ asOf: isoDate(), fetchedAt: new Date().toISOString(), rows: [], error: "BankMCP is not configured yet." }));
     try {
       const result = await fetchAllBalances();
+      const rows = result.rows.map((r) => ({
+        source: r.source,
+        account: r.account,
+        currency: r.currency,
+        booked: r.booked,
+        available: r.available,
+        error: r.error,
+      }));
+      const fx = await fetchRatesToUsd(rows.map((r) => r.currency));
       res.type("html").send(balancesPage({
         asOf: isoDate(),
         fetchedAt: new Date().toISOString(),
-        rows: result.rows.map((r) => ({
-          source: r.source,
-          account: r.account,
-          currency: r.currency,
-          booked: r.booked,
-          available: r.available,
-          error: r.error,
-        })),
+        rows,
+        fx,
       }));
     } catch (err) {
       log("balances page failed", (err as Error).message);
