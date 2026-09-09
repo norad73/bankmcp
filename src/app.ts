@@ -294,8 +294,12 @@ export function createApp() {
     if (!pending) return void failed("Unknown or expired authorization. Visit /connect?bank=YourBank to start again.");
 
     try {
-      const created = await eb.createSession(code);
-      const session = await completeSession(created);
+      let created = await eb.createSession(code);
+      let session = await completeSession(created);
+      if (!session.accounts.length) {
+        await new Promise((r) => setTimeout(r, 1500));
+        session = await completeSession(created);
+      }
       store().addSession(session, { label: pending.label });
       const currencies = session.accounts.map((a) => a.currency).join(", ");
       log(`bank connected: ${pending.label ?? session.aspsp.name}, ${session.accounts.length} account(s) [${currencies}] psu=${session.psu_type} country=${session.aspsp.country}`);

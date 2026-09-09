@@ -171,6 +171,10 @@ export const eb = {
     }),
 };
 
+function stubAccount(uid: string): AccountResource {
+  return { uid, currency: "EUR", identification_hash: uid };
+}
+
 /** Fill in accounts returned by getSession but missing from createSession. */
 export async function completeSession(session: Session): Promise<Session> {
   try {
@@ -181,7 +185,7 @@ export async function completeSession(session: Session): Promise<Session> {
       try {
         accounts.set(uid, await eb.getAccount(uid));
       } catch {
-        /* account not readable yet */
+        accounts.set(uid, stubAccount(uid));
       }
     }
     return { ...session, accounts: [...accounts.values()] };
