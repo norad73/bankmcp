@@ -14,6 +14,10 @@ test("balance cache reuses entries for the same day only", async () => {
   assert.equal(getCachedBalance("acct-1")?.available, 100);
   assert.equal(getCachedBalance("acct-1", "2020-01-01"), undefined);
 
+  const { athensDate } = await import("../src/data.ts");
+  setCachedBalance("acct-2", { available: 50, currency: "EUR", date: athensDate() });
+  assert.equal(getCachedBalance("acct-2")?.available, 50);
+
   if (prev) process.env.DATA_DIR = prev;
   else delete process.env.DATA_DIR;
 });

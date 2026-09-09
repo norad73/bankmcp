@@ -1,10 +1,12 @@
 // Fetches booked balances for every linked account and POSTs them to a Google
 // Apps Script web app. Invoked by POST /cron/sync-balances or `npm run sync-sheets`.
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { config, isConfigured } from "./config.ts";
 import { getCachedBalance, setCachedBalance } from "./balance-cache.ts";
-import { accountDisplayName, daysLeft, isoDate, sessionName, simplifyBalances } from "./data.ts";
-import type { StoredAccount } from "./store.ts";
 import type { CachedBalance } from "./balance-cache.ts";
+import { accountDisplayName, athensDate, daysLeft, sessionName, simplifyBalances } from "./data.ts";
+import type { StoredAccount } from "./store.ts";
 import { eb, EnableBankingError } from "./enablebanking.ts";
 import { store } from "./store.ts";
 import { isAirwallexConfigured, listAirwallexBalances, AirwallexError } from "./airwallex.ts";
@@ -16,7 +18,6 @@ import { isWiseConfigured, listWiseBalances, WiseError } from "./wise.ts";
 export interface BalanceRow {
   date: string;
   source: "enablebanking" | "viva" | "airwallex" | "stripe" | "paypal" | "wise";
-  /** Bank name for Enable Banking rows (Eurobank, Wise, …). */
   bank?: string;
   account: string;
   uid: string;
@@ -25,9 +26,59 @@ export interface BalanceRow {
   booked?: number;
   available?: number;
   error?: string;
+  cached?: boolean;
+  fetchedAt?: string;
+}
+
+export interface FetchBalanceOpts {
+  force?: boolean;
+  refreshUid?: string;
 }
 
 const SOURCE_TIMEOUT_MS = 20_000;
+
+type RowBase = Omit<BalanceRow, "date" | "uid" | "booked" | "available" | "error" | "cached" | "fetchedAt">;
+
+function shouldFetch(uid: string, date: string, opts: FetchBalanceOpts): boolean {
+  if (opts.force) return true;
+  if (opts.refreshUid === uid) return true;
+  return !getCachedBalance(uid, date);
+}
+
+function rowFromCache(date: string, uid: string, base: RowBase, cached: CachedBalance): BalanceRow {
+  return {
+    date,
+    ...base,
+    uid,
+    booked: cached.booked,
+    available: cached.available,
+    currency: cached.currency ?? base.currency,
+    cached: true,
+    fetchedAt: cached.fetchedAt,
+  };
+}
+
+function storeRow(uid: string, row: BalanceRow, date: string): BalanceRow {
+  if (row.error) return row;
+  setCachedBalance(uid, { date, booked: row.booked, available: row.available, currency: row.currency });
+  return { ...row, cached: false, fetchedAt: new Date().toISOString() };
+}
+
+function cachedRowsForPrefix(prefix: string, date: string, labelForUid: (uid: string, cached: CachedBalance) => RowBase): BalanceRow[] {
+  const file = join(config.dataDir, "balance-cache.json");
+  if (!existsSync(file)) return [];
+  const data = JSON.parse(readFileSync(file, "utf8")) as { accounts?: Record<string, CachedBalance> };
+  const rows: BalanceRow[] = [];
+  for (const [uid, cached] of Object.entries(data.accounts ?? {})) {
+    if (!uid.startsWith(prefix) || cached.date !== date) continue;
+    rows.push(rowFromCache(date, uid, labelForUid(uid, cached), cached));
+  }
+  return rows;
+}
+
+function sourceUsesCacheOnly(prefix: string, opts: FetchBalanceOpts): boolean {
+  return !opts.force && (!opts.refreshUid || !opts.refreshUid.startsWith(prefix));
+}
 
 async function withTimeout<T>(label: string, work: Promise<T>, ms = SOURCE_TIMEOUT_MS): Promise<T> {
   return Promise.race([
@@ -44,10 +95,11 @@ function ebErrorMessage(err: unknown): string {
   return (err as Error).message;
 }
 
-async function ensureStoredAccount(accountUid: string, sessionId: string): Promise<StoredAccount | undefined> {
+async function ensureStoredAccount(accountUid: string, sessionId: string, skipApi = false): Promise<StoredAccount | undefined> {
   const s = store();
   let stored = s.account(accountUid);
   if (stored && accountDisplayName(stored) !== accountUid) return stored;
+  if (skipApi) return stored;
 
   try {
     const details = await eb.getAccount(accountUid);
@@ -74,74 +126,40 @@ async function ensureStoredAccount(accountUid: string, sessionId: string): Promi
   return stored;
 }
 
-function ebRowFromCache(date: string, accountUid: string, bank: string, account: string, stored: StoredAccount | undefined, cached: CachedBalance): BalanceRow {
-  return {
-    date,
+async function fetchEnableBankingAccountRow(date: string, accountUid: string, bank: string, sessionId: string, opts: FetchBalanceOpts): Promise<BalanceRow> {
+  const s = store();
+  const useCache = !shouldFetch(accountUid, date, opts);
+  const stored = await ensureStoredAccount(accountUid, sessionId, useCache);
+  const session = s.data.sessions[sessionId];
+  const account = stored ? accountDisplayName(stored) : accountUid;
+  const base: RowBase = {
     source: "enablebanking",
     bank,
     account,
-    uid: accountUid,
     iban: stored?.iban,
-    currency: stored?.currency ?? cached?.currency ?? "EUR",
-    booked: cached?.booked,
-    available: cached?.available,
+    currency: stored?.currency ?? "EUR",
   };
-}
 
-async function fetchEnableBankingAccountRow(date: string, accountUid: string, bank: string, sessionId: string): Promise<BalanceRow> {
-  const s = store();
-  const stored = await ensureStoredAccount(accountUid, sessionId);
-  const session = s.data.sessions[sessionId];
-  const account = stored ? accountDisplayName(stored) : accountUid;
-  const consentExpired = session && daysLeft(session.valid_until) < 0;
-
-  if (consentExpired) {
-    return {
-      date,
-      source: "enablebanking",
-      bank,
-      account,
-      uid: accountUid,
-      iban: stored?.iban,
-      currency: stored?.currency ?? "EUR",
-      error: "Consent expired — reconnect via /connect",
-    };
+  if (session && daysLeft(session.valid_until) < 0) {
+    return { date, ...base, uid: accountUid, error: "Consent expired — reconnect via /connect" };
   }
 
   const cached = getCachedBalance(accountUid, date);
-  if (cached) return ebRowFromCache(date, accountUid, bank, account, stored, cached);
+  if (useCache && cached) return rowFromCache(date, accountUid, base, cached);
 
   try {
     const balances = simplifyBalances(await withTimeout(`Enable Banking ${bank} ${account}`, eb.getBalances(accountUid), 15_000));
-    setCachedBalance(accountUid, {
-      booked: balances.booked,
-      available: balances.available,
-      currency: stored?.currency ?? balances.currency,
-    });
-    return {
+    return storeRow(accountUid, {
       date,
-      source: "enablebanking",
-      bank,
-      account,
+      ...base,
       uid: accountUid,
-      iban: stored?.iban,
       currency: stored?.currency ?? balances.currency ?? "EUR",
       booked: balances.booked,
       available: balances.available,
-    };
+    }, date);
   } catch (err) {
-    const fallback = getCachedBalance(accountUid, date);
-    if (fallback) return ebRowFromCache(date, accountUid, bank, account, stored, fallback);
-    return {
-      date,
-      source: "enablebanking",
-      bank,
-      account,
-      uid: accountUid,
-      iban: stored?.iban,
-      currency: stored?.currency ?? "EUR",
-      error: ebErrorMessage(err),
-    };
+    if (cached) return rowFromCache(date, accountUid, base, cached);
+    return { date, ...base, uid: accountUid, error: ebErrorMessage(err) };
   }
 }
 
@@ -149,7 +167,7 @@ function isEbWiseSession(session: { bank: { name: string } }): boolean {
   return session.bank.name.toLowerCase() === "wise";
 }
 
-async function fetchEnableBankingBalances(date: string): Promise<BalanceRow[]> {
+async function fetchEnableBankingBalances(date: string, opts: FetchBalanceOpts): Promise<BalanceRow[]> {
   const s = store();
   const sessions = s.sessions().filter((session) => !(isWiseConfigured() && isEbWiseSession(session)));
   if (!sessions.length) return [];
@@ -161,51 +179,32 @@ async function fetchEnableBankingBalances(date: string): Promise<BalanceRow[]> {
     const bank = sessionName(session);
 
     if (daysLeft(session.valid_until) < 0) {
-      rows.push({
-        date,
-        source: "enablebanking",
-        bank,
-        account: bank,
-        uid: `session:${session.id}`,
-        currency: "EUR",
-        error: "Consent expired — reconnect via /connect",
-      });
+      rows.push({ date, source: "enablebanking", bank, account: bank, uid: `session:${session.id}`, currency: "EUR", error: "Consent expired — reconnect via /connect" });
       continue;
     }
 
-    let accountUids: string[] = [];
-    try {
-      const status = await withTimeout(`Enable Banking ${bank} session`, eb.getSession(session.id), 15_000);
-      accountUids = status.accounts ?? [];
-    } catch (err) {
-      rows.push({
-        date,
-        source: "enablebanking",
-        bank,
-        account: bank,
-        uid: `session:${session.id}`,
-        currency: "EUR",
-        error: ebErrorMessage(err),
-      });
-      continue;
+    let accountUids = s.accounts().filter((a) => a.session_id === session.id).map((a) => a.uid);
+    const needsSession = opts.force || !accountUids.length || (!!opts.refreshUid && accountUids.includes(opts.refreshUid));
+    if (needsSession) {
+      try {
+        const status = await withTimeout(`Enable Banking ${bank} session`, eb.getSession(session.id), 15_000);
+        accountUids = status.accounts ?? accountUids;
+      } catch (err) {
+        if (!accountUids.length) {
+          rows.push({ date, source: "enablebanking", bank, account: bank, uid: `session:${session.id}`, currency: "EUR", error: ebErrorMessage(err) });
+          continue;
+        }
+      }
     }
 
     if (!accountUids.length) {
-      rows.push({
-        date,
-        source: "enablebanking",
-        bank,
-        account: bank,
-        uid: `session:${session.id}:empty`,
-        currency: "EUR",
-        error: "No accounts returned by bank",
-      });
+      rows.push({ date, source: "enablebanking", bank, account: bank, uid: `session:${session.id}:empty`, currency: "EUR", error: "No accounts returned by bank" });
       continue;
     }
 
     for (const uid of accountUids) {
       seenUids.add(uid);
-      rows.push(await fetchEnableBankingAccountRow(date, uid, bank, session.id));
+      rows.push(await fetchEnableBankingAccountRow(date, uid, bank, session.id, opts));
     }
   }
 
@@ -213,127 +212,155 @@ async function fetchEnableBankingBalances(date: string): Promise<BalanceRow[]> {
     if (seenUids.has(account.uid)) continue;
     const session = s.data.sessions[account.session_id];
     if (session && isWiseConfigured() && isEbWiseSession(session)) continue;
-    rows.push(await fetchEnableBankingAccountRow(date, account.uid, session ? sessionName(session) : "Enable Banking", account.session_id));
+    rows.push(await fetchEnableBankingAccountRow(date, account.uid, session ? sessionName(session) : "Enable Banking", account.session_id, opts));
   }
 
   return rows;
 }
 
-async function fetchVivaBalances(date: string): Promise<BalanceRow[]> {
+async function fetchVivaBalances(date: string, opts: FetchBalanceOpts): Promise<BalanceRow[]> {
   if (!isVivaConfigured()) return [];
+  if (sourceUsesCacheOnly("viva:", opts)) {
+    const cached = cachedRowsForPrefix("viva:", date, (uid, c) => ({
+      source: "viva",
+      account: uid.replace(/^viva:/, "Viva "),
+      currency: c.currency ?? "EUR",
+    }));
+    if (cached.length) return cached;
+  }
   try {
     const wallets = await listVivaWallets();
-    return wallets.map((wallet) => ({
-      date,
-      source: "viva" as const,
-      account: wallet.friendlyName ?? `Viva wallet ${wallet.walletId}`,
-      uid: `viva:${wallet.walletId}`,
-      iban: wallet.iban,
-      currency: wallet.currency,
-      booked: wallet.available,
-      available: wallet.available,
-    }));
+    return wallets.map((wallet) => {
+      const uid = `viva:${wallet.walletId}`;
+      const base: RowBase = {
+        source: "viva",
+        account: wallet.friendlyName ?? `Viva wallet ${wallet.walletId}`,
+        iban: wallet.iban,
+        currency: wallet.currency,
+      };
+      const cached = getCachedBalance(uid, date);
+      if (!shouldFetch(uid, date, opts) && cached) return rowFromCache(date, uid, base, cached);
+      return storeRow(uid, { date, ...base, uid, booked: wallet.available, available: wallet.available }, date);
+    });
   } catch (err) {
     const msg = err instanceof VivaError ? `${err.status}` : (err as Error).message;
     return [{ date, source: "viva", account: "Viva", uid: "viva:error", currency: "EUR", error: msg }];
   }
 }
 
-async function fetchAirwallexBalances(date: string): Promise<BalanceRow[]> {
+async function fetchAirwallexBalances(date: string, opts: FetchBalanceOpts): Promise<BalanceRow[]> {
   if (!isAirwallexConfigured()) return [];
+  if (sourceUsesCacheOnly("airwallex:", opts)) {
+    const cached = cachedRowsForPrefix("airwallex:", date, (uid, c) => {
+      const [, accountType, currency] = uid.split(":");
+      return { source: "airwallex", account: `Airwallex ${accountType}`, currency: currency ?? c.currency ?? "USD" };
+    });
+    if (cached.length) return cached;
+  }
   try {
     const balances = await listAirwallexBalances();
-    return balances.map((b) => ({
-      date,
-      source: "airwallex" as const,
-      account: `Airwallex ${b.accountType}`,
-      uid: `airwallex:${b.accountType}:${b.currency}`,
-      currency: b.currency,
-      booked: b.available,
-      available: b.available,
-    }));
+    return balances.map((b) => {
+      const uid = `airwallex:${b.accountType}:${b.currency}`;
+      const base: RowBase = { source: "airwallex", account: `Airwallex ${b.accountType}`, currency: b.currency };
+      const cached = getCachedBalance(uid, date);
+      if (!shouldFetch(uid, date, opts) && cached) return rowFromCache(date, uid, base, cached);
+      return storeRow(uid, { date, ...base, uid, booked: b.available, available: b.available }, date);
+    });
   } catch (err) {
-    const msg =
-      err instanceof AirwallexError
-        ? `${err.status}: ${(() => { try { return JSON.parse(err.body).code ?? err.body.slice(0, 120); } catch { return err.body.slice(0, 120); } })()}`
-        : (err as Error).message;
+    const msg = err instanceof AirwallexError ? `${err.status}: ${(() => { try { return JSON.parse(err.body).code ?? err.body.slice(0, 120); } catch { return err.body.slice(0, 120); } })()}` : (err as Error).message;
     return [{ date, source: "airwallex", account: "Airwallex", uid: "airwallex:error", currency: "USD", error: msg }];
   }
 }
 
-async function fetchStripeBalances(date: string): Promise<BalanceRow[]> {
+async function fetchStripeBalances(date: string, opts: FetchBalanceOpts): Promise<BalanceRow[]> {
   if (!isStripeConfigured()) return [];
+  if (sourceUsesCacheOnly("stripe:", opts)) {
+    const cached = cachedRowsForPrefix("stripe:", date, (uid, c) => ({
+      source: "stripe",
+      account: uid.includes(":pending:") ? "Stripe pending" : "Stripe available",
+      currency: c.currency ?? uid.split(":").pop() ?? "USD",
+    }));
+    if (cached.length) return cached;
+  }
   try {
     const balances = await listStripeBalances();
     return balances.flatMap((b) => {
-      const rows: BalanceRow[] = [{
-        date,
-        source: "stripe",
-        account: "Stripe available",
-        uid: `stripe:available:${b.currency}`,
-        currency: b.currency,
-        booked: b.available,
-        available: b.available,
-      }];
-      if (b.pending !== 0) {
-        rows.push({
-          date,
-          source: "stripe",
-          account: "Stripe pending",
-          uid: `stripe:pending:${b.currency}`,
-          currency: b.currency,
-          booked: b.pending,
-          available: b.pending,
-        });
+      const out: BalanceRow[] = [];
+      const availableUid = `stripe:available:${b.currency}`;
+      const availableBase: RowBase = { source: "stripe", account: "Stripe available", currency: b.currency };
+      const availableCached = getCachedBalance(availableUid, date);
+      if (!shouldFetch(availableUid, date, opts) && availableCached) {
+        out.push(rowFromCache(date, availableUid, availableBase, availableCached));
+      } else {
+        out.push(storeRow(availableUid, { date, ...availableBase, uid: availableUid, booked: b.available, available: b.available }, date));
       }
-      return rows;
+      if (b.pending !== 0) {
+        const pendingUid = `stripe:pending:${b.currency}`;
+        const pendingBase: RowBase = { source: "stripe", account: "Stripe pending", currency: b.currency };
+        const pendingCached = getCachedBalance(pendingUid, date);
+        if (!shouldFetch(pendingUid, date, opts) && pendingCached) {
+          out.push(rowFromCache(date, pendingUid, pendingBase, pendingCached));
+        } else {
+          out.push(storeRow(pendingUid, { date, ...pendingBase, uid: pendingUid, booked: b.pending, available: b.pending }, date));
+        }
+      }
+      return out;
     });
   } catch (err) {
-    const msg =
-      err instanceof StripeError
-        ? `${err.status}: ${(() => { try { return JSON.parse(err.body).error?.message ?? err.body.slice(0, 120); } catch { return err.body.slice(0, 120); } })()}`
-        : (err as Error).message;
+    const msg = err instanceof StripeError ? `${err.status}: ${(() => { try { return JSON.parse(err.body).error?.message ?? err.body.slice(0, 120); } catch { return err.body.slice(0, 120); } })()}` : (err as Error).message;
     return [{ date, source: "stripe", account: "Stripe", uid: "stripe:error", currency: "USD", error: msg }];
   }
 }
 
-async function fetchWiseBalances(date: string): Promise<BalanceRow[]> {
+async function fetchWiseBalances(date: string, opts: FetchBalanceOpts): Promise<BalanceRow[]> {
   if (!isWiseConfigured()) return [];
+  if (sourceUsesCacheOnly("wise:", opts)) {
+    const cached = cachedRowsForPrefix("wise:", date, (uid, c) => {
+      const currency = uid.split(":").pop() ?? c.currency ?? "USD";
+      return { source: "wise", account: `Wise · ${currency}`, currency };
+    });
+    if (cached.length) return cached;
+  }
   try {
     const { profileId, profileLabel, balances } = await listWiseBalances();
-    return balances.map((b) => ({
-      date,
-      source: "wise" as const,
-      account: b.name ? `${profileLabel} · ${b.name}` : `${profileLabel} · ${b.currency}`,
-      uid: `wise:${profileId}:${b.currency}`,
-      currency: b.currency,
-      booked: b.available,
-      available: b.available,
-    }));
+    return balances.map((b) => {
+      const uid = `wise:${profileId}:${b.currency}`;
+      const base: RowBase = {
+        source: "wise",
+        account: b.name ? `${profileLabel} · ${b.name}` : `${profileLabel} · ${b.currency}`,
+        currency: b.currency,
+      };
+      const cached = getCachedBalance(uid, date);
+      if (!shouldFetch(uid, date, opts) && cached) return rowFromCache(date, uid, base, cached);
+      return storeRow(uid, { date, ...base, uid, booked: b.available, available: b.available }, date);
+    });
   } catch (err) {
     const msg = err instanceof WiseError ? `${err.status}: ${err.body.slice(0, 120)}` : (err as Error).message;
     return [{ date, source: "wise", account: "Wise", uid: "wise:error", currency: "USD", error: msg }];
   }
 }
 
-async function fetchPayPalBalances(date: string): Promise<BalanceRow[]> {
+async function fetchPayPalBalances(date: string, opts: FetchBalanceOpts): Promise<BalanceRow[]> {
   if (!isPayPalConfigured()) return [];
+  if (sourceUsesCacheOnly("paypal:", opts)) {
+    const cached = cachedRowsForPrefix("paypal:", date, (uid, c) => ({
+      source: "paypal",
+      account: "PayPal available",
+      currency: c.currency ?? uid.split(":").pop() ?? "USD",
+    }));
+    if (cached.length) return cached;
+  }
   try {
     const balances = await listPayPalBalances();
-    return balances.map((b) => ({
-      date,
-      source: "paypal" as const,
-      account: "PayPal available",
-      uid: `paypal:available:${b.currency}`,
-      currency: b.currency,
-      booked: b.available,
-      available: b.available,
-    }));
+    return balances.map((b) => {
+      const uid = `paypal:available:${b.currency}`;
+      const base: RowBase = { source: "paypal", account: "PayPal available", currency: b.currency };
+      const cached = getCachedBalance(uid, date);
+      if (!shouldFetch(uid, date, opts) && cached) return rowFromCache(date, uid, base, cached);
+      return storeRow(uid, { date, ...base, uid, booked: b.available, available: b.available }, date);
+    });
   } catch (err) {
-    const msg =
-      err instanceof PayPalError
-        ? `${err.status}: ${(() => { try { return JSON.parse(err.body).message ?? err.body.slice(0, 120); } catch { return err.body.slice(0, 120); } })()}`
-        : (err as Error).message;
+    const msg = err instanceof PayPalError ? `${err.status}: ${(() => { try { return JSON.parse(err.body).message ?? err.body.slice(0, 120); } catch { return err.body.slice(0, 120); } })()}` : (err as Error).message;
     return [{ date, source: "paypal", account: "PayPal", uid: "paypal:error", currency: "USD", error: msg }];
   }
 }
@@ -342,21 +369,21 @@ async function fetchSource(label: string, source: BalanceRow["source"], currency
   try {
     return await withTimeout(label, work);
   } catch (err) {
-    return [{ date: isoDate(), source, account: label, uid: `${source}:timeout`, currency, error: (err as Error).message }];
+    return [{ date: athensDate(), source, account: label, uid: `${source}:timeout`, currency, error: (err as Error).message }];
   }
 }
 
-export async function fetchAllBalances(): Promise<{ rows: BalanceRow[] }> {
+export async function fetchAllBalances(opts: FetchBalanceOpts = {}): Promise<{ rows: BalanceRow[] }> {
   if (!isConfigured()) throw new Error("BankConnector is not configured yet.");
 
-  const date = isoDate();
+  const date = athensDate();
   const [ebRows, vivaRows, airwallexRows, stripeRows, paypalRows, wiseRows] = await Promise.all([
-    fetchSource("Enable Banking", "enablebanking", "EUR", fetchEnableBankingBalances(date)),
-    fetchSource("Viva", "viva", "EUR", fetchVivaBalances(date)),
-    fetchSource("Airwallex", "airwallex", "USD", fetchAirwallexBalances(date)),
-    fetchSource("Stripe", "stripe", "USD", fetchStripeBalances(date)),
-    fetchSource("PayPal", "paypal", "USD", fetchPayPalBalances(date)),
-    fetchSource("Wise", "wise", "USD", fetchWiseBalances(date)),
+    fetchSource("Enable Banking", "enablebanking", "EUR", fetchEnableBankingBalances(date, opts)),
+    fetchSource("Viva", "viva", "EUR", fetchVivaBalances(date, opts)),
+    fetchSource("Airwallex", "airwallex", "USD", fetchAirwallexBalances(date, opts)),
+    fetchSource("Stripe", "stripe", "USD", fetchStripeBalances(date, opts)),
+    fetchSource("PayPal", "paypal", "USD", fetchPayPalBalances(date, opts)),
+    fetchSource("Wise", "wise", "USD", fetchWiseBalances(date, opts)),
   ]);
   const rows = [...ebRows, ...vivaRows, ...airwallexRows, ...stripeRows, ...paypalRows, ...wiseRows];
 
@@ -367,11 +394,15 @@ export async function fetchAllBalances(): Promise<{ rows: BalanceRow[] }> {
   return { rows };
 }
 
+export async function refreshBalanceByUid(uid: string): Promise<void> {
+  await fetchAllBalances({ refreshUid: uid });
+}
+
 export async function syncBalancesToSheet(): Promise<{ rows: BalanceRow[] }> {
   const url = config.googleSheetsWebhookUrl;
   if (!url) throw new Error("Set GOOGLE_SHEETS_WEBHOOK_URL to your Google Apps Script web app URL.");
 
-  const { rows } = await fetchAllBalances();
+  const { rows } = await fetchAllBalances({ force: true });
 
   const res = await fetch(url, {
     method: "POST",

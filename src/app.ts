@@ -10,9 +10,9 @@ import { verifyPassword } from "./auth.ts";
 import { balancesPage, connectedPage, failedPage, privacyPage, setupPage, siteLoginPage, statusPage, termsPage } from "./pages.ts";
 import { applySetup, setupAvailable } from "./setup.ts";
 import { fetchRatesToUsd } from "./fx.ts";
-import { fetchAllBalances, syncBalancesToSheet } from "./sync-sheets.ts";
+import { fetchAllBalances, refreshBalanceByUid, syncBalancesToSheet } from "./sync-sheets.ts";
+import { athensDate, isoDate } from "./data.ts";
 import { isWiseConfigured } from "./wise.ts";
-import { isoDate } from "./data.ts";
 import { loadAspspLogos, resolveLogo } from "./logos.ts";
 import { VERSION } from "./version.ts";
 import { seedBalanceCacheForLabel } from "./seed-cache.ts";
@@ -122,38 +122,54 @@ export function createApp() {
     res.redirect(303, returnTo);
   });
 
+  const toDisplayRows = (result: Awaited<ReturnType<typeof fetchAllBalances>>, aspspLogos: Awaited<ReturnType<typeof loadAspspLogos>>) =>
+    result.rows
+      .filter((r) => r.source !== "airwallex" || ["USD", "EUR"].includes(r.currency.toUpperCase()))
+      .map((r) => {
+        const source = r.source === "wise" ? "Wise" : (r.bank ?? r.source);
+        return {
+          uid: r.uid,
+          source,
+          logo: resolveLogo(source, r.source, aspspLogos),
+          account: r.account,
+          currency: r.currency,
+          booked: r.booked,
+          available: r.available,
+          error: r.error,
+          cached: r.cached,
+          fetchedAt: r.fetchedAt,
+        };
+      });
+
   app.get("/balances", async (_req, res) => {
-    if (!isConfigured()) return void res.type("html").send(balancesPage({ asOf: isoDate(), fetchedAt: new Date().toISOString(), rows: [], error: "BankConnector is not configured yet." }));
+    if (!isConfigured()) return void res.type("html").send(balancesPage({ asOf: athensDate(), fetchedAt: new Date().toISOString(), rows: [], error: "BankConnector is not configured yet." }));
     try {
       const [result, fx, aspspLogos] = await Promise.all([
         fetchAllBalances(),
         fetchRatesToUsd(["EUR", "USD", "GBP"]),
         loadAspspLogos(),
       ]);
-      const rows = result.rows
-        .filter((r) => r.source !== "airwallex" || ["USD", "EUR"].includes(r.currency.toUpperCase()))
-        .map((r) => {
-          const source = r.source === "wise" ? "Wise" : (r.bank ?? r.source);
-          return {
-            source,
-            logo: resolveLogo(source, r.source, aspspLogos),
-            account: r.account,
-            currency: r.currency,
-            booked: r.booked,
-            available: r.available,
-            error: r.error,
-          };
-        });
       res.type("html").send(balancesPage({
-        asOf: isoDate(),
+        asOf: athensDate(),
         fetchedAt: new Date().toISOString(),
-        rows,
+        rows: toDisplayRows(result, aspspLogos),
         fx,
       }));
     } catch (err) {
       log("balances page failed", (err as Error).message);
-      res.type("html").send(balancesPage({ asOf: isoDate(), fetchedAt: new Date().toISOString(), rows: [], error: (err as Error).message }));
+      res.type("html").send(balancesPage({ asOf: athensDate(), fetchedAt: new Date().toISOString(), rows: [], error: (err as Error).message }));
     }
+  });
+
+  app.post("/balances/refresh", express.urlencoded({ extended: false }), async (req, res) => {
+    const uid = String((req.body as Record<string, string | undefined>).uid ?? "").trim();
+    if (!uid) return void res.redirect(303, "/balances");
+    try {
+      await refreshBalanceByUid(uid);
+    } catch (err) {
+      log(`balance refresh failed for ${uid}`, (err as Error).message);
+    }
+    res.redirect(303, "/balances");
   });
 
   if (config.cronSecret) {
@@ -172,6 +188,18 @@ export function createApp() {
         res.json({ ok: true, as_of: isoDate(), accounts: result.rows });
       } catch (err) {
         log("balances failed", (err as Error).message);
+        res.status(500).json({ error: (err as Error).message });
+      }
+    });
+
+    app.post("/cron/refresh-balances", async (req, res) => {
+      if (!cronAuth(req, res)) return;
+      try {
+        const result = await fetchAllBalances({ force: true });
+        log(`refresh-balances: ${result.rows.length} row(s) cached for ${athensDate()}`);
+        res.json({ ok: true, as_of: athensDate(), count: result.rows.length });
+      } catch (err) {
+        log("refresh-balances failed", (err as Error).message);
         res.status(500).json({ error: (err as Error).message });
       }
     });

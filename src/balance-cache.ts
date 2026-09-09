@@ -1,8 +1,8 @@
-// Daily cache for Enable Banking balances to avoid exceeding bank rate limits.
+// Daily balance cache — keyed by account uid + Athens calendar date.
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { config } from "./config.ts";
-import { isoDate } from "./data.ts";
+import { athensDate } from "./data.ts";
 
 export interface CachedBalance {
   date: string;
@@ -42,7 +42,7 @@ function save(data: BalanceCacheData): void {
   renameSync(tmp, file);
 }
 
-export function getCachedBalance(accountUid: string, date = isoDate()): CachedBalance | undefined {
+export function getCachedBalance(accountUid: string, date = athensDate()): CachedBalance | undefined {
   const entry = load().accounts[accountUid];
   return entry?.date === date ? entry : undefined;
 }
@@ -50,7 +50,7 @@ export function getCachedBalance(accountUid: string, date = isoDate()): CachedBa
 export function setCachedBalance(accountUid: string, input: Omit<CachedBalance, "date" | "fetchedAt"> & { date?: string; fetchedAt?: string }): void {
   const data = load();
   data.accounts[accountUid] = {
-    date: input.date ?? isoDate(),
+    date: input.date ?? athensDate(),
     fetchedAt: input.fetchedAt ?? new Date().toISOString(),
     booked: input.booked,
     available: input.available,
@@ -78,7 +78,7 @@ export function seedBalanceCache(
   findAccounts: () => Array<{ uid: string; displayName: string; currency: string }>,
   input: SeedBalanceCacheInput,
 ): SeedBalanceCacheResult[] {
-  const date = input.date ?? isoDate();
+  const date = input.date ?? athensDate();
   const currency = input.currency ?? "EUR";
   const booked = input.booked ?? input.available;
   let accounts = findAccounts();

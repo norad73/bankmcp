@@ -101,6 +101,11 @@ export function isoDate(d = new Date()): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** Calendar date in Europe/Athens — used for daily balance cache keys. */
+export function athensDate(d = new Date()): string {
+  return d.toLocaleDateString("en-CA", { timeZone: "Europe/Athens" });
+}
+
 export function daysAgo(n: number): string {
   return isoDate(new Date(Date.now() - n * 86_400_000));
 }

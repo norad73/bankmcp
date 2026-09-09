@@ -54,7 +54,7 @@ services:
   - type: cron
     name: bankconnector-sync-balances
     runtime: docker
-    schedule: "0 6 * * *"
+    schedule: "0 16 * * *"  # 19:00 Europe/Athens (EEST, UTC+3)
     dockerfilePath: ./Dockerfile.cron
     envVars:
       - key: BANKCONNECTOR_HOST
