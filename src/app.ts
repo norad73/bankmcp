@@ -144,7 +144,9 @@ export function createApp() {
         };
       });
 
-  app.get("/balances", async (_req, res) => {
+  app.get("/balances", async (req, res) => {
+    const sheetMessage = decodeURIComponent(readCookie(req, "sheet_msg") ?? "");
+    if (sheetMessage) res.clearCookie("sheet_msg", { path: "/" });
     if (!isConfigured()) return void res.type("html").send(balancesPage({ asOf: athensDate(), fetchedAt: new Date().toISOString(), rows: [], error: "BankConnector is not configured yet." }));
     try {
       const [result, fx, aspspLogos] = await Promise.all([
@@ -157,10 +159,11 @@ export function createApp() {
         fetchedAt: new Date().toISOString(),
         rows: toDisplayRows(result, aspspLogos),
         fx,
+        sheetMessage: sheetMessage || undefined,
       }));
     } catch (err) {
       log("balances page failed", (err as Error).message);
-      res.type("html").send(balancesPage({ asOf: athensDate(), fetchedAt: new Date().toISOString(), rows: [], error: (err as Error).message }));
+      res.type("html").send(balancesPage({ asOf: athensDate(), fetchedAt: new Date().toISOString(), rows: [], error: (err as Error).message, sheetMessage: sheetMessage || undefined }));
     }
   });
 
@@ -193,6 +196,23 @@ export function createApp() {
       log("refresh-all failed", (err as Error).message);
     }
     res.redirect(303, "/balances");
+  });
+
+  app.post("/balances/fill-sheet", express.urlencoded({ extended: false }), async (req, res) => {
+    const msg = (text: string) => {
+      res.cookie("sheet_msg", text, { httpOnly: true, sameSite: "lax", secure: req.secure, maxAge: 60_000, path: "/" });
+      res.redirect(303, "/balances");
+    };
+    try {
+      const result = await syncBalancesToSheet();
+      const sheet = result.sheet as { action?: string; reason?: string; row?: number } | undefined;
+      if (sheet?.action === "skip") msg(`Google Sheet: skipped (${sheet.reason ?? "already filled"}).`);
+      else if (sheet?.action) msg(`Google Sheet: ${sheet.action} row ${sheet.row ?? "?"}.`);
+      else msg("Google Sheet fill completed.");
+    } catch (err) {
+      log("fill-sheet failed", (err as Error).message);
+      msg(`Google Sheet fill failed: ${(err as Error).message}`);
+    }
   });
 
   if (config.cronSecret) {

@@ -291,7 +291,7 @@ function totalsByCurrency(rows: BalanceDisplayRow[]) {
   return [...totals.entries()].sort(([a], [b]) => a.localeCompare(b));
 }
 
-export function balancesPage(input: { asOf: string; fetchedAt: string; rows: BalanceDisplayRow[]; fx?: FxRates; error?: string }): string {
+export function balancesPage(input: { asOf: string; fetchedAt: string; rows: BalanceDisplayRow[]; fx?: FxRates; error?: string; sheetMessage?: string }): string {
   const rows = input.rows;
   const failed = rows.filter((r) => r.error);
   const withBalance = rows.filter((r) => !r.error && (rowAmount(r) ?? 0) !== 0);
@@ -323,6 +323,8 @@ export function balancesPage(input: { asOf: string; fetchedAt: string; rows: Bal
   return wideShell(
     "Balances",
     `${input.error ? `<p class="error">${esc(input.error)}</p>` : ""}
+     ${input.sheetMessage ? `<p class="muted">${esc(input.sheetMessage)}</p>` : ""}
+     <p class="actions" style="margin-top:0;margin-bottom:12px"><form method="post" action="/balances/fill-sheet" style="display:inline"><button type="submit" class="refreshbtn" style="width:auto;padding:8px 14px;font-size:14px">Fill balances sheet</button></form></p>
      <p class="muted">As of ${esc(fmtDate(input.asOf))} · fetched ${esc(new Date(input.fetchedAt).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }))}${fxNote}</p>
      ${table}
      <p class="actions"><span class="muted">Balances are cached for the day · fresh pull daily at 19:00 Athens · hover status for details · bold ↻ refreshes all · row ↻ refreshes one</span></p>`,
