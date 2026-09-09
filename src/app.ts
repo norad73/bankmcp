@@ -184,6 +184,16 @@ export function createApp() {
     res.redirect(303, "/balances");
   });
 
+  app.post("/balances/refresh-all", express.urlencoded({ extended: false }), async (_req, res) => {
+    try {
+      const result = await fetchAllBalances({ force: true });
+      log(`refresh-all: ${result.rows.length} row(s) refreshed for ${athensDate()}`);
+    } catch (err) {
+      log("refresh-all failed", (err as Error).message);
+    }
+    res.redirect(303, "/balances");
+  });
+
   if (config.cronSecret) {
     const cronAuth = (req: express.Request, res: express.Response) => {
       if (req.headers.authorization !== `Bearer ${config.cronSecret}`) {

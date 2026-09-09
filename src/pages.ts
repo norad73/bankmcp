@@ -198,7 +198,9 @@ table.bal .status-err{color:var(--err)}
 table.bal .status-muted{color:var(--muted)}
 table.bal tfoot tr.total td{border-top:2px solid var(--ink);padding-top:12px;font-weight:700}
 table.bal td.refresh{width:44px;text-align:center;padding-left:4px;padding-right:4px}
+table.bal th.refresh{padding-left:4px;padding-right:4px}
 table.bal .refreshbtn{margin:0;padding:4px 8px;width:auto;font-size:12px;font-weight:600;border-radius:8px;background:transparent;color:var(--ink);border:1px solid var(--line);cursor:pointer;line-height:1.2}
+table.bal .refreshbtn-all{font-size:14px;font-weight:900;border-color:var(--ink)}
 table.bal .refreshbtn:hover{background:var(--bg);opacity:1}
 table.bal .status-cell{cursor:help;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .actions{margin-top:16px}
@@ -301,7 +303,7 @@ export function balancesPage(input: { asOf: string; fetchedAt: string; rows: Bal
   const pillParts = [`${rows.length} account${rows.length === 1 ? "" : "s"}`];
   if (failed.length) pillParts.push(`${failed.length} failed`);
   const table = rows.length
-    ? `<table class="bal"><thead><tr><th class="logo"></th><th>Source</th><th>Account</th><th>Currency</th><th>Status</th><th class="num">Available</th><th class="num">USD equiv</th><th class="refresh"></th></tr></thead><tbody>${rows
+    ? `<table class="bal"><thead><tr><th class="logo"></th><th>Source</th><th>Account</th><th>Currency</th><th>Status</th><th class="num">Available</th><th class="num">USD equiv</th><th class="refresh"><form method="post" action="/balances/refresh-all"><button type="submit" class="refreshbtn refreshbtn-all" title="Refresh all balances">↻</button></form></th></tr></thead><tbody>${rows
         .map((r) => {
           const status = rowStatus(r);
           const amount = rowAmount(r);
@@ -323,7 +325,7 @@ export function balancesPage(input: { asOf: string; fetchedAt: string; rows: Bal
     `${input.error ? `<p class="error">${esc(input.error)}</p>` : ""}
      <p class="muted">As of ${esc(fmtDate(input.asOf))} · fetched ${esc(new Date(input.fetchedAt).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }))}${fxNote}</p>
      ${table}
-     <p class="actions"><span class="muted">Balances are cached for the day · fresh pull daily at 19:00 Athens · hover status for details · use ↻ to refresh one row</span></p>`,
+     <p class="actions"><span class="muted">Balances are cached for the day · fresh pull daily at 19:00 Athens · hover status for details · bold ↻ refreshes all · row ↻ refreshes one</span></p>`,
     { kind: failed.length && !withBalance.length ? "error" : failed.length ? "neutral" : "ok", pill: pillParts.join(" · ") },
   );
 }
