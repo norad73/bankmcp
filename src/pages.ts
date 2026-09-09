@@ -231,8 +231,10 @@ export function balancesLoginPage(opts: { error?: string } = {}): string {
   );
 }
 
+const hasBalance = (r: BalanceDisplayRow) => (r.booked ?? 0) !== 0 || (r.available ?? 0) !== 0;
+
 export function balancesPage(input: { asOf: string; fetchedAt: string; rows: BalanceDisplayRow[]; error?: string }): string {
-  const ok = input.rows.filter((r) => !r.error);
+  const ok = input.rows.filter((r) => !r.error && hasBalance(r));
   const failed = input.rows.filter((r) => r.error);
   const rows = [...ok, ...failed];
   const table = rows.length
@@ -244,7 +246,7 @@ export function balancesPage(input: { asOf: string; fetchedAt: string; rows: Bal
           return `<tr${cls}><td>${esc(r.source)}</td><td>${esc(r.account)}</td><td>${esc(r.currency)}</td><td class="num">${booked}</td><td class="num">${available}</td></tr>`;
         })
         .join("")}</tbody></table>`
-    : `<p class="muted">No accounts linked yet.</p>`;
+    : `<p class="muted">No non-zero balances.</p>`;
   return wideShell(
     "Balances",
     `${input.error ? `<p class="error">${esc(input.error)}</p>` : ""}
