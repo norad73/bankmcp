@@ -94,6 +94,10 @@ export const config = {
   /** Stripe secret or restricted key with Balance read. https://docs.stripe.com/api/balance/balance_retrieve */
   stripeApiBase: (env.STRIPE_API_BASE ?? "https://api.stripe.com").replace(/\/+$/, ""),
   stripeSecretKey: env.STRIPE_SECRET_KEY ?? "",
+  /** PayPal REST app (Live). Needs Transaction Search / List Balances on the app. */
+  paypalApiBase: (env.PAYPAL_API_BASE ?? "https://api-m.paypal.com").replace(/\/+$/, ""),
+  paypalClientId: env.PAYPAL_CLIENT_ID ?? "",
+  paypalSecret: env.PAYPAL_SECRET ?? "",
   // Hosts an OAuth client may send the sign-in back to. Stops a phishing link
   // from registering a client that redirects your authorization code elsewhere.
   // Defaults cover the well-known MCP clients; subdomains are included.

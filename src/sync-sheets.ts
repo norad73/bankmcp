@@ -5,12 +5,13 @@ import { describeAccount, isoDate, simplifyBalances } from "./data.ts";
 import { eb, EnableBankingError } from "./enablebanking.ts";
 import { store } from "./store.ts";
 import { isAirwallexConfigured, listAirwallexBalances, AirwallexError } from "./airwallex.ts";
+import { isPayPalConfigured, listPayPalBalances, PayPalError } from "./paypal.ts";
 import { isStripeConfigured, listStripeBalances, StripeError } from "./stripe.ts";
 import { isVivaConfigured, listVivaWallets, VivaError } from "./viva.ts";
 
 export interface BalanceRow {
   date: string;
-  source: "enablebanking" | "viva" | "airwallex" | "stripe";
+  source: "enablebanking" | "viva" | "airwallex" | "stripe" | "paypal";
   account: string;
   uid: string;
   iban?: string;
@@ -132,6 +133,28 @@ async function fetchStripeBalances(date: string): Promise<BalanceRow[]> {
   }
 }
 
+async function fetchPayPalBalances(date: string): Promise<BalanceRow[]> {
+  if (!isPayPalConfigured()) return [];
+  try {
+    const balances = await listPayPalBalances();
+    return balances.map((b) => ({
+      date,
+      source: "paypal" as const,
+      account: "PayPal available",
+      uid: `paypal:available:${b.currency}`,
+      currency: b.currency,
+      booked: b.available,
+      available: b.available,
+    }));
+  } catch (err) {
+    const msg =
+      err instanceof PayPalError
+        ? `${err.status}: ${(() => { try { return JSON.parse(err.body).message ?? err.body.slice(0, 120); } catch { return err.body.slice(0, 120); } })()}`
+        : (err as Error).message;
+    return [{ date, source: "paypal", account: "PayPal", uid: "paypal:error", currency: "USD", error: msg }];
+  }
+}
+
 export async function fetchAllBalances(): Promise<{ rows: BalanceRow[] }> {
   if (!isConfigured()) throw new Error("BankMCP is not configured yet.");
 
@@ -140,10 +163,11 @@ export async function fetchAllBalances(): Promise<{ rows: BalanceRow[] }> {
   const vivaRows = await fetchVivaBalances(date);
   const airwallexRows = await fetchAirwallexBalances(date);
   const stripeRows = await fetchStripeBalances(date);
-  const rows = [...ebRows, ...vivaRows, ...airwallexRows, ...stripeRows];
+  const paypalRows = await fetchPayPalBalances(date);
+  const rows = [...ebRows, ...vivaRows, ...airwallexRows, ...stripeRows, ...paypalRows];
 
   if (!rows.length) {
-    throw new Error("No accounts linked yet. Connect a bank or configure Viva/Airwallex/Stripe API credentials.");
+    throw new Error("No accounts linked yet. Connect a bank or configure Viva/Airwallex/Stripe/PayPal API credentials.");
   }
 
   return { rows };
