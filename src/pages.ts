@@ -181,6 +181,9 @@ table.bal th,table.bal td{padding:10px 8px;border-bottom:1px solid var(--line);t
 table.bal th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600}
 table.bal td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 table.bal tr.err td{color:var(--err)}
+table.bal .status-ok{color:var(--ok);font-weight:600}
+table.bal .status-err{color:var(--err)}
+table.bal .status-muted{color:var(--muted)}
 table.bal tfoot tr.total td{border-top:2px solid var(--ink);padding-top:12px;font-weight:700}
 .actions{margin-top:16px}
 .actions a{font-size:14px;color:var(--muted)}
@@ -204,41 +207,55 @@ export function siteLoginPage(opts: { returnTo?: string; error?: string } = {}):
   );
 }
 
-const hasBalance = (r: BalanceDisplayRow) => (r.available ?? 0) !== 0;
+function rowAmount(r: BalanceDisplayRow) {
+  return r.available ?? r.booked;
+}
+
+function rowStatus(r: BalanceDisplayRow): { label: string; cls: string } {
+  if (r.error) return { label: r.error, cls: "status-err" };
+  const amount = rowAmount(r);
+  if (amount === undefined) return { label: "No balance", cls: "status-muted" };
+  if (amount === 0) return { label: "Zero", cls: "status-muted" };
+  return { label: "OK", cls: "status-ok" };
+}
 
 function totalsByCurrency(rows: BalanceDisplayRow[]) {
   const totals = new Map<string, number>();
-  for (const r of rows) totals.set(r.currency, (totals.get(r.currency) ?? 0) + (r.available ?? 0));
+  for (const r of rows) totals.set(r.currency, (totals.get(r.currency) ?? 0) + (rowAmount(r) ?? 0));
   return [...totals.entries()].sort(([a], [b]) => a.localeCompare(b));
 }
 
 export function balancesPage(input: { asOf: string; fetchedAt: string; rows: BalanceDisplayRow[]; fx?: FxRates; error?: string }): string {
-  const ok = input.rows.filter((r) => !r.error && hasBalance(r));
-  const failed = input.rows.filter((r) => r.error);
-  const rows = [...ok, ...failed];
-  const totals = totalsByCurrency(ok);
+  const rows = input.rows;
+  const failed = rows.filter((r) => r.error);
+  const withBalance = rows.filter((r) => !r.error && (rowAmount(r) ?? 0) !== 0);
+  const totals = totalsByCurrency(withBalance);
   const usd = (amount: number | undefined, currency: string) => amountInUsd(amount, currency, input.fx);
   const fmtUsd = (amount: number | undefined) => (amount === undefined ? "—" : fmtMoney(amount, "USD"));
-  const totalUsd = ok.reduce((sum, r) => sum + (usd(r.available, r.currency) ?? 0), 0);
+  const totalUsd = withBalance.reduce((sum, r) => sum + (usd(rowAmount(r), r.currency) ?? 0), 0);
   const fxNote = input.fx?.date ? ` · FX ${esc(input.fx.date)} (ECB)` : "";
+  const pillParts = [`${rows.length} account${rows.length === 1 ? "" : "s"}`];
+  if (failed.length) pillParts.push(`${failed.length} failed`);
   const table = rows.length
-    ? `<table class="bal"><thead><tr><th>Source</th><th>Account</th><th>Currency</th><th class="num">Available</th><th class="num">USD equiv</th></tr></thead><tbody>${rows
+    ? `<table class="bal"><thead><tr><th>Source</th><th>Account</th><th>Currency</th><th>Status</th><th class="num">Available</th><th class="num">USD equiv</th></tr></thead><tbody>${rows
         .map((r) => {
+          const status = rowStatus(r);
+          const amount = rowAmount(r);
           const cls = r.error ? " class=\"err\"" : "";
-          const available = r.error ? esc(r.error) : fmtMoney(r.available, r.currency);
-          const usdEquiv = r.error ? "—" : fmtUsd(usd(r.available, r.currency));
-          return `<tr${cls}><td>${esc(r.source)}</td><td>${esc(r.account)}</td><td>${esc(r.currency)}</td><td class="num">${available}</td><td class="num">${usdEquiv}</td></tr>`;
+          const available = r.error ? "—" : fmtMoney(amount, r.currency);
+          const usdEquiv = r.error ? "—" : fmtUsd(usd(amount, r.currency));
+          return `<tr${cls}><td>${esc(r.source)}</td><td>${esc(r.account)}</td><td>${esc(r.currency)}</td><td class="${status.cls}">${esc(status.label)}</td><td class="num">${available}</td><td class="num">${usdEquiv}</td></tr>`;
         })
         .join("")}</tbody>${totals.length ? `<tfoot>${totals
-        .map(([currency, amount]) => `<tr class="total"><td colspan="2">Total</td><td>${esc(currency)}</td><td class="num">${fmtMoney(amount, currency)}</td><td class="num">${fmtUsd(usd(amount, currency))}</td></tr>`)
-        .join("")}${input.fx ? `<tr class="total"><td colspan="4">Grand total (USD)</td><td class="num">${fmtMoney(totalUsd, "USD")}</td></tr>` : ""}</tfoot>` : ""}</table>`
-    : `<p class="muted">No non-zero balances.</p>`;
+        .map(([currency, amount]) => `<tr class="total"><td colspan="3">Total</td><td></td><td class="num">${fmtMoney(amount, currency)}</td><td class="num">${fmtUsd(usd(amount, currency))}</td></tr>`)
+        .join("")}${input.fx ? `<tr class="total"><td colspan="5">Grand total (USD)</td><td class="num">${fmtMoney(totalUsd, "USD")}</td></tr>` : ""}</tfoot>` : ""}</table>`
+    : `<p class="muted">No accounts linked yet.</p>`;
   return wideShell(
     "Balances",
     `${input.error ? `<p class="error">${esc(input.error)}</p>` : ""}
      <p class="muted">As of ${esc(fmtDate(input.asOf))} · fetched ${esc(new Date(input.fetchedAt).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }))}${fxNote}</p>
      ${table}
      <p class="actions"><a href="/balances">↻ Refresh</a></p>`,
-    { kind: failed.length && !ok.length ? "error" : failed.length ? "neutral" : "ok", pill: `${ok.length} account${ok.length === 1 ? "" : "s"}` },
+    { kind: failed.length && !withBalance.length ? "error" : failed.length ? "neutral" : "ok", pill: pillParts.join(" · ") },
   );
 }
