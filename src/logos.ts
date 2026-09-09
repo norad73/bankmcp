@@ -45,11 +45,12 @@ export async function loadAspspLogos(): Promise<Map<string, string>> {
 
 export function resolveLogo(displaySource: string, rawSource: string, aspspLogos: Map<string, string>): string {
   const raw = rawSource.toLowerCase();
-  if (PROVIDER_DOMAINS[raw]) return favicon(PROVIDER_DOMAINS[raw]);
-
   const bankName = displaySource.replace(/\s+(IKE|US Branch)$/i, "").trim().toLowerCase();
+
   const brand = BRAND_LOGOS[bankName] ?? BRAND_LOGOS[displaySource.toLowerCase()];
   if (brand) return brand;
+
+  if (raw !== "enablebanking" && PROVIDER_DOMAINS[raw]) return favicon(PROVIDER_DOMAINS[raw]);
 
   const fromEb = aspspLogos.get(bankName) ?? aspspLogos.get(displaySource.toLowerCase());
   if (fromEb) return fromEb;
