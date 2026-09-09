@@ -12,6 +12,7 @@ export interface Settings {
   admin_password_hash?: string;
   country?: string;
   setup_completed?: string;
+  google_sheets_webhook_url?: string;
 }
 
 const settingsPath = join(dataDir, "settings.json");
@@ -72,8 +73,10 @@ export const config = {
   notifyWebhookUrl: env.NOTIFY_WEBHOOK_URL ?? "",
   /** Shared secret for POST /cron/sync-balances (Render cron has no disk access). */
   cronSecret: env.CRON_SECRET ?? "",
-  /** Google Apps Script web app URL that appends balance rows to a sheet. */
-  googleSheetsWebhookUrl: env.GOOGLE_SHEETS_WEBHOOK_URL ?? "",
+  /** Google Apps Script web app URL that fills the Balances sheet tab. */
+  get googleSheetsWebhookUrl(): string {
+    return env.GOOGLE_SHEETS_WEBHOOK_URL ?? settings.google_sheets_webhook_url ?? "";
+  },
   /** Viva Wallet legacy API (Basic Auth). Use Merchant ID + API Key, or Account Transactions credentials. */
   vivaApiBase: (env.VIVA_API_BASE ?? "https://www.vivapayments.com").replace(/\/+$/, ""),
   vivaBasicUser: env.VIVA_MERCHANT_ID ?? env.VIVA_BASIC_USER ?? "",

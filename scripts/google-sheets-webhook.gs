@@ -45,6 +45,10 @@ function setupFillButtonMenu() {
     .addToUi();
 }
 
+function doGet() {
+  return json({ ok: true, service: "BankConnector", action: "Use POST { action: 'fill' } or run fillBalancesSheet from the sheet." });
+}
+
 function doPost(e) {
   const body = e && e.postData ? JSON.parse(e.postData.contents) : {};
   if (body.action === "fill") {
