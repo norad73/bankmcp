@@ -3,10 +3,11 @@ import { createServer as createHttpsServer } from "node:https";
 import { createServer as createHttpServer } from "node:http";
 import { config, setupProblems, tlsOptions } from "./config.ts";
 import { createApp } from "./app.ts";
-import { applyKnownSessionLabels } from "./labels.ts";
+import { applyKnownSessionLabels, purgeEbWiseWhenApiConfigured } from "./labels.ts";
 import { setupAvailable } from "./setup.ts";
 
 applyKnownSessionLabels();
+purgeEbWiseWhenApiConfigured();
 const app = createApp();
 const tls = tlsOptions();
 const httpServer = tls ? createHttpsServer(tls, app) : createHttpServer(app);

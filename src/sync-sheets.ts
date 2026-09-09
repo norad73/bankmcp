@@ -119,9 +119,13 @@ async function fetchEnableBankingAccountRow(date: string, accountUid: string, ba
   }
 }
 
+function isEbWiseSession(session: { bank: { name: string } }): boolean {
+  return session.bank.name.toLowerCase() === "wise";
+}
+
 async function fetchEnableBankingBalances(date: string): Promise<BalanceRow[]> {
   const s = store();
-  const sessions = s.sessions().filter((session) => !(isWiseConfigured() && session.bank.name.toLowerCase() === "wise"));
+  const sessions = s.sessions().filter((session) => !(isWiseConfigured() && isEbWiseSession(session)));
   if (!sessions.length) return [];
 
   const rows: BalanceRow[] = [];
@@ -182,6 +186,7 @@ async function fetchEnableBankingBalances(date: string): Promise<BalanceRow[]> {
   for (const account of s.accounts()) {
     if (seenUids.has(account.uid)) continue;
     const session = s.data.sessions[account.session_id];
+    if (session && isWiseConfigured() && isEbWiseSession(session)) continue;
     rows.push(await fetchEnableBankingAccountRow(date, account.uid, session ? sessionName(session) : "Enable Banking", account.session_id));
   }
 

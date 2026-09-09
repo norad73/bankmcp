@@ -1,5 +1,6 @@
 // Apply known display names to stored bank sessions on startup.
 import { store, type StoredSession } from "./store.ts";
+import { isWiseConfigured } from "./wise.ts";
 
 const KNOWN_LABELS: Array<{ bank: string; label: string; when?: (sessions: StoredSession[]) => boolean }> = [
   {
@@ -8,6 +9,16 @@ const KNOWN_LABELS: Array<{ bank: string; label: string; when?: (sessions: Store
     when: (sessions) => sessions.filter((s) => s.bank.name === "Eurobank" && !s.label).length === 1,
   },
 ];
+
+export function purgeEbWiseWhenApiConfigured(): void {
+  if (!isWiseConfigured()) return;
+  const s = store();
+  for (const session of s.sessions()) {
+    if (session.bank.name.toLowerCase() !== "wise") continue;
+    s.removeSession(session.id);
+    console.log(`[bank] removed Enable Banking Wise session ${session.id} (Wise API token configured)`);
+  }
+}
 
 export function applyKnownSessionLabels(): void {
   const s = store();

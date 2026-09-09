@@ -129,7 +129,7 @@ export function createApp() {
       const rows = result.rows
         .filter((r) => r.source !== "airwallex" || ["USD", "EUR"].includes(r.currency.toUpperCase()))
         .map((r) => {
-          const source = r.bank ?? r.source;
+          const source = r.source === "wise" ? "Wise" : (r.bank ?? r.source);
           return {
             source,
             logo: resolveLogo(source, r.source, aspspLogos),
