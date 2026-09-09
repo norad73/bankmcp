@@ -211,6 +211,7 @@ table.bal th,table.bal td{padding:10px 8px;border-bottom:1px solid var(--line);t
 table.bal th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600}
 table.bal td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 table.bal tr.err td{color:var(--err)}
+table.bal tfoot tr.total td{border-top:2px solid var(--ink);padding-top:12px;font-weight:700}
 .actions{margin-top:16px}
 .actions a{font-size:14px;color:var(--muted)}
 </style>`,
@@ -233,10 +234,22 @@ export function balancesLoginPage(opts: { error?: string } = {}): string {
 
 const hasBalance = (r: BalanceDisplayRow) => (r.booked ?? 0) !== 0 || (r.available ?? 0) !== 0;
 
+function totalsByCurrency(rows: BalanceDisplayRow[]) {
+  const totals = new Map<string, { booked: number; available: number }>();
+  for (const r of rows) {
+    const t = totals.get(r.currency) ?? { booked: 0, available: 0 };
+    t.booked += r.booked ?? 0;
+    t.available += r.available ?? 0;
+    totals.set(r.currency, t);
+  }
+  return [...totals.entries()].sort(([a], [b]) => a.localeCompare(b));
+}
+
 export function balancesPage(input: { asOf: string; fetchedAt: string; rows: BalanceDisplayRow[]; error?: string }): string {
   const ok = input.rows.filter((r) => !r.error && hasBalance(r));
   const failed = input.rows.filter((r) => r.error);
   const rows = [...ok, ...failed];
+  const totals = totalsByCurrency(ok);
   const table = rows.length
     ? `<table class="bal"><thead><tr><th>Source</th><th>Account</th><th>Currency</th><th class="num">Booked</th><th class="num">Available</th></tr></thead><tbody>${rows
         .map((r) => {
@@ -245,7 +258,9 @@ export function balancesPage(input: { asOf: string; fetchedAt: string; rows: Bal
           const available = r.error ? "—" : fmtMoney(r.available, r.currency);
           return `<tr${cls}><td>${esc(r.source)}</td><td>${esc(r.account)}</td><td>${esc(r.currency)}</td><td class="num">${booked}</td><td class="num">${available}</td></tr>`;
         })
-        .join("")}</tbody></table>`
+        .join("")}</tbody>${totals.length ? `<tfoot>${totals
+        .map(([currency, t]) => `<tr class="total"><td colspan="2">Total</td><td>${esc(currency)}</td><td class="num">${fmtMoney(t.booked, currency)}</td><td class="num">${fmtMoney(t.available, currency)}</td></tr>`)
+        .join("")}</tfoot>` : ""}</table>`
     : `<p class="muted">No non-zero balances.</p>`;
   return wideShell(
     "Balances",
