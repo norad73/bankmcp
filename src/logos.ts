@@ -12,8 +12,8 @@ const PROVIDER_DOMAINS: Record<string, string> = {
 };
 
 const BRAND_LOGOS: Record<string, string> = {
-  eurobank: "https://play-lh.googleusercontent.com/mhwT4FDSCeEhG_oGyiXQojL_3kcgP8N9uzl3FMlAU30tSygwz5bh1AQeXRhBawJZQpDRzdIhUHpG3EpUoEq-cQ",
-  "eurobank ike": "https://play-lh.googleusercontent.com/mhwT4FDSCeEhG_oGyiXQojL_3kcgP8N9uzl3FMlAU30tSygwz5bh1AQeXRhBawJZQpDRzdIhUHpG3EpUoEq-cQ",
+  eurobank: "/assets/logos/eurobank.png",
+  "eurobank ike": "/assets/logos/eurobank.png",
 };
 
 const DOMAIN_ALIASES: Record<string, string> = {

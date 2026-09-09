@@ -1,8 +1,10 @@
 // Fetches booked balances for every linked account and POSTs them to a Google
 // Apps Script web app. Invoked by POST /cron/sync-balances or `npm run sync-sheets`.
 import { config, isConfigured } from "./config.ts";
+import { getCachedBalance, setCachedBalance } from "./balance-cache.ts";
 import { accountDisplayName, daysLeft, isoDate, sessionName, simplifyBalances } from "./data.ts";
 import type { StoredAccount } from "./store.ts";
+import type { CachedBalance } from "./balance-cache.ts";
 import { eb, EnableBankingError } from "./enablebanking.ts";
 import { store } from "./store.ts";
 import { isAirwallexConfigured, listAirwallexBalances, AirwallexError } from "./airwallex.ts";
@@ -72,6 +74,20 @@ async function ensureStoredAccount(accountUid: string, sessionId: string): Promi
   return stored;
 }
 
+function ebRowFromCache(date: string, accountUid: string, bank: string, account: string, stored: StoredAccount | undefined, cached: CachedBalance): BalanceRow {
+  return {
+    date,
+    source: "enablebanking",
+    bank,
+    account,
+    uid: accountUid,
+    iban: stored?.iban,
+    currency: stored?.currency ?? cached?.currency ?? "EUR",
+    booked: cached?.booked,
+    available: cached?.available,
+  };
+}
+
 async function fetchEnableBankingAccountRow(date: string, accountUid: string, bank: string, sessionId: string): Promise<BalanceRow> {
   const s = store();
   const stored = await ensureStoredAccount(accountUid, sessionId);
@@ -92,8 +108,16 @@ async function fetchEnableBankingAccountRow(date: string, accountUid: string, ba
     };
   }
 
+  const cached = getCachedBalance(accountUid, date);
+  if (cached) return ebRowFromCache(date, accountUid, bank, account, stored, cached);
+
   try {
     const balances = simplifyBalances(await withTimeout(`Enable Banking ${bank} ${account}`, eb.getBalances(accountUid), 15_000));
+    setCachedBalance(accountUid, {
+      booked: balances.booked,
+      available: balances.available,
+      currency: stored?.currency ?? balances.currency,
+    });
     return {
       date,
       source: "enablebanking",
@@ -106,6 +130,8 @@ async function fetchEnableBankingAccountRow(date: string, accountUid: string, ba
       available: balances.available,
     };
   } catch (err) {
+    const fallback = getCachedBalance(accountUid, date);
+    if (fallback) return ebRowFromCache(date, accountUid, bank, account, stored, fallback);
     return {
       date,
       source: "enablebanking",

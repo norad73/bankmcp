@@ -1,5 +1,7 @@
 // HTTP server: balance sync, bank connections, and status pages.
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import express from "express";
 import { config, isConfigured, setupProblems } from "./config.ts";
 import { completeSession, eb, EnableBankingError } from "./enablebanking.ts";
@@ -13,6 +15,7 @@ import { isWiseConfigured } from "./wise.ts";
 import { isoDate } from "./data.ts";
 import { loadAspspLogos, resolveLogo } from "./logos.ts";
 import { VERSION } from "./version.ts";
+import { seedBalanceCacheForLabel } from "./seed-cache.ts";
 
 export function createApp() {
   const log = (msg: string, extra?: unknown) => console.log(`[bank ${new Date().toISOString()}] ${msg}`, extra ?? "");
@@ -20,12 +23,13 @@ export function createApp() {
   const app = express();
   app.set("trust proxy", 1);
   app.disable("x-powered-by");
+  app.use("/assets", express.static(join(dirname(fileURLToPath(import.meta.url)), "..", "public")));
   app.use((_req, res, next) => {
     res.set({
       "X-Frame-Options": "DENY",
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "no-referrer",
-      "Content-Security-Policy": "default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+      "Content-Security-Policy": "default-src 'none'; img-src 'self' https: data:; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
     });
     next();
   });
@@ -181,6 +185,31 @@ export function createApp() {
       } catch (err) {
         log("sync-balances failed", (err as Error).message);
         res.status(500).json({ error: (err as Error).message });
+      }
+    });
+
+    app.post("/cron/seed-balance-cache", express.json({ limit: "4kb" }), (req, res) => {
+      if (!cronAuth(req, res)) return;
+      const body = req.body as Record<string, unknown>;
+      const sessionLabel = String(body.label ?? body.sessionLabel ?? "");
+      const available = Number(body.available);
+      if (!sessionLabel || !Number.isFinite(available)) {
+        res.status(400).json({ error: "label and available are required" });
+        return;
+      }
+      try {
+        const seeded = seedBalanceCacheForLabel({
+          sessionLabel,
+          available,
+          booked: Number.isFinite(Number(body.booked)) ? Number(body.booked) : undefined,
+          currency: typeof body.currency === "string" ? body.currency : undefined,
+          account: typeof body.account === "string" ? body.account : undefined,
+          accountUid: typeof body.accountUid === "string" ? body.accountUid : typeof body.uid === "string" ? body.uid : undefined,
+        });
+        log(`seed-balance-cache: ${seeded.map((row) => `${row.account}=${available}`).join(", ")}`);
+        res.json({ ok: true, seeded });
+      } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
       }
     });
   }

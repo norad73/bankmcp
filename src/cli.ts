@@ -7,8 +7,26 @@ import { eb, EnableBankingError } from "./enablebanking.ts";
 import { hashPassword } from "./auth.ts";
 import { store } from "./store.ts";
 import { daysLeft } from "./data.ts";
+import { seedBalanceCacheForLabel } from "./seed-cache.ts";
 
 const [command, ...args] = process.argv.slice(2);
+
+function readFlag(name: string): string | undefined {
+  const prefix = `--${name}=`;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    if (arg === `--${name}`) return args[i + 1];
+    if (arg.startsWith(prefix)) return arg.slice(prefix.length);
+  }
+  return undefined;
+}
+
+function readNumberFlag(name: string): number | undefined {
+  const value = readFlag(name);
+  if (value === undefined) return undefined;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : undefined;
+}
 
 const CTRL_C = "\u0003";
 const BACKSPACE = "\u007f";
@@ -54,6 +72,29 @@ switch (command) {
     console.log(hashPassword(pw));
     break;
   }
+  case "seed-cache": {
+    const sessionLabel = readFlag("label");
+    const available = readNumberFlag("available");
+    if (!sessionLabel || available === undefined) {
+      console.error("Usage: node src/cli.ts seed-cache --label \"Eurobank IKE\" --available 9844.24 [--currency EUR] [--booked N] [--account NAME] [--uid UID]");
+      process.exit(1);
+    }
+    try {
+      const seeded = seedBalanceCacheForLabel({
+        sessionLabel,
+        available,
+        booked: readNumberFlag("booked"),
+        currency: readFlag("currency"),
+        account: readFlag("account"),
+        accountUid: readFlag("uid"),
+      });
+      for (const row of seeded) console.log(`Cached ${available} for ${sessionLabel} / ${row.account} (${row.accountUid})`);
+    } catch (err) {
+      console.error((err as Error).message);
+      process.exit(1);
+    }
+    break;
+  }
   case "check": {
     const problems = setupProblems();
     if (problems.length) {
@@ -81,6 +122,6 @@ switch (command) {
     break;
   }
   default:
-    console.log("Usage: node src/cli.ts <hash-password [password] | check>");
+    console.log("Usage: node src/cli.ts <hash-password [password] | check | seed-cache ...>");
     process.exit(command ? 1 : 0);
 }
