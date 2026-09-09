@@ -1,6 +1,10 @@
-import { seedBalanceCache, type SeedBalanceCacheInput, type SeedBalanceCacheResult } from "./balance-cache.ts";
-import { accountDisplayName, sessionName } from "./data.ts";
+import { getCachedBalance, seedBalanceCache, type SeedBalanceCacheInput, type SeedBalanceCacheResult } from "./balance-cache.ts";
+import { accountDisplayName, isoDate, sessionName } from "./data.ts";
 import { store } from "./store.ts";
+
+const MANUAL_BALANCE_SEEDS: Array<{ until: string; sessionLabel: string; available: number; currency: string }> = [
+  { until: "2026-09-09", sessionLabel: "Eurobank IKE", available: 9844.24, currency: "EUR" },
+];
 
 export function accountsForSessionLabel(label: string) {
   const s = store();
@@ -19,4 +23,25 @@ export function accountsForSessionLabel(label: string) {
 
 export function seedBalanceCacheForLabel(input: SeedBalanceCacheInput): SeedBalanceCacheResult[] {
   return seedBalanceCache(() => accountsForSessionLabel(input.sessionLabel), input);
+}
+
+export function applyManualBalanceSeeds(): void {
+  const today = isoDate();
+  for (const seed of MANUAL_BALANCE_SEEDS) {
+    if (today > seed.until) continue;
+    try {
+      const accounts = accountsForSessionLabel(seed.sessionLabel);
+      if (accounts.some((account) => getCachedBalance(account.uid, today))) continue;
+      const seeded = seedBalanceCacheForLabel({
+        sessionLabel: seed.sessionLabel,
+        available: seed.available,
+        booked: seed.available,
+        currency: seed.currency,
+        date: today,
+      });
+      console.log(`[bank] seeded balance cache for ${seed.sessionLabel} (${seeded.map((row) => row.account).join(", ")}): ${seed.available} ${seed.currency}`);
+    } catch (err) {
+      console.log(`[bank] balance seed skipped for ${seed.sessionLabel}: ${(err as Error).message}`);
+    }
+  }
 }
