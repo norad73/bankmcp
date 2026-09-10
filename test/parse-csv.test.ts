@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parseCsv } from "../src/parse-csv.ts";
-import { affectsAirwallexAccountBalance, parseBalanceActivityCsv } from "../src/sync-airwallex-usd.ts";
+import {
+  affectsAirwallexAccountBalance,
+  filterNewAirwallexUsdRows,
+  parseBalanceActivityCsv,
+  type AirwallexUsdSheetRow,
+} from "../src/sync-airwallex-usd.ts";
 
 test("parseCsv handles quoted commas", () => {
   const rows = parseCsv('a,"b,c",d\n1,2,3');
@@ -29,4 +34,32 @@ test("affectsAirwallexAccountBalance excludes reservation holds and releases", (
   assert.equal(affectsAirwallexAccountBalance({ financialTransactionType: "CARD_AUTHORISATION" }), false);
   assert.equal(affectsAirwallexAccountBalance({ financialTransactionType: "CARD_AUTHORISATION_RELEASE" }), false);
   assert.equal(affectsAirwallexAccountBalance({ financialTransactionType: "PAYMENT_RESERVE_HOLD" }), false);
+});
+
+test("filterNewAirwallexUsdRows skips only ids still on the sheet", () => {
+  const row = (id: string, type: string): AirwallexUsdSheetRow => ({
+    transactionId: id,
+    time: "2026-09-01T12:00:00-0700",
+    type: "CARD",
+    financialTransactionType: type,
+    description: "",
+    walletCurrency: "USD",
+    targetCurrency: "",
+    targetAmount: "",
+    conversionRate: "",
+    matureDate: "",
+    amount: 10,
+    fee: "",
+    debitNetAmount: 10,
+    creditNetAmount: "",
+    availableBalance: 100,
+    accountBalance: 100,
+    createdAt: "2026-09-01T12:00:00-0700",
+    requestId: "",
+    reference: "",
+    noteToSelf: "",
+  });
+  const rows = [row("keep-me", "CARD_PURCHASE"), row("re-add-me", "CARD_PURCHASE")];
+  const filtered = filterNewAirwallexUsdRows(rows, new Set(["keep-me"]), 0);
+  assert.deepEqual(filtered.map((r) => r.transactionId), ["re-add-me"]);
 });

@@ -1,5 +1,5 @@
 // BankConnector — append new rows on the "Airwallex USD" transactions tab.
-// Script version: 0.4.33 (keep in sync with BankConnector app version)
+// Script version: 0.4.35 (keep in sync with BankConnector app version)
 // Paste with bankconnector-shared.gs and bankconnector-balances.gs in the same Apps Script project.
 
 var AIRWALLEX_USD_SHEET_NAME = "Airwallex USD";
@@ -32,7 +32,11 @@ function fillAirwallexUsdTransactions() {
   try {
     var sheet = getAirwallexUsdSheet_();
     var sinceMs = findAirwallexUsdSinceMs_(sheet);
-    var result = callBankConnector_("/cron/sync-airwallex-usd-transactions", { sinceMs: sinceMs });
+    var knownTransactionIds = loadAirwallexUsdTransactionIds_(sheet);
+    var result = callBankConnector_("/cron/sync-airwallex-usd-transactions", {
+      sinceMs: sinceMs,
+      knownTransactionIds: knownTransactionIds,
+    });
     try {
       SpreadsheetApp.getUi().alert(formatAirwallexUsdAlert_(result));
     } catch (ignore) {}
@@ -129,6 +133,17 @@ function findLastAirwallexUsdFilledRow_(sheet, minFilled) {
 
 function findAirwallexUsdAppendRow_(sheet) {
   return findLastAirwallexUsdFilledRow_(sheet, 3) + 1;
+}
+
+function loadAirwallexUsdTransactionIds_(sheet) {
+  var colMap = findAirwallexUsdColumnMap_(sheet);
+  if (!colMap.transactionId) return [];
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  var values = sheet.getRange(2, colMap.transactionId, lastRow, colMap.transactionId).getValues();
+  return values
+    .map(function (row) { return String(row[0] || "").trim(); })
+    .filter(function (id) { return id; });
 }
 
 function findAirwallexUsdSinceMs_(sheet) {

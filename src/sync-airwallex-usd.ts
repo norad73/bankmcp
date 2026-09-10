@@ -117,7 +117,29 @@ export function parseBalanceActivityCsv(csv: string): AirwallexUsdSheetRow[] {
   return out;
 }
 
-export async function fetchNewAirwallexUsdTransactions(sinceMs = 0): Promise<AirwallexUsdSheetRow[]> {
+export function filterNewAirwallexUsdRows(
+  rows: AirwallexUsdSheetRow[],
+  known: Set<string>,
+  sinceMs = 0,
+): AirwallexUsdSheetRow[] {
+  const skipped = rows.filter((row) => !affectsAirwallexAccountBalance(row)).map((row) => row.transactionId);
+  if (skipped.length) rememberAirwallexTransactionIds(skipped);
+  return rows
+    .filter(affectsAirwallexAccountBalance)
+    .filter((row) => !known.has(row.transactionId))
+    .filter((row) => sinceMs <= 0 || rowTimeMs(row) > sinceMs)
+    .sort((a, b) => rowTimeMs(a) - rowTimeMs(b));
+}
+
+function airwallexKnownIds(sheetTransactionIds?: string[]): Set<string> {
+  if (sheetTransactionIds !== undefined) return new Set(sheetTransactionIds.filter(Boolean));
+  return loadAirwallexTransactionIds();
+}
+
+export async function fetchNewAirwallexUsdTransactions(
+  sinceMs = 0,
+  sheetTransactionIds?: string[],
+): Promise<AirwallexUsdSheetRow[]> {
   if (!isAirwallexConfigured()) return [];
   const fromDate = sinceToFromDate(sinceMs);
   const toDate = isoDate();
@@ -127,22 +149,19 @@ export async function fetchNewAirwallexUsdTransactions(sinceMs = 0): Promise<Air
     toDate,
     timeoutMs: 180_000,
   });
-  const known = loadAirwallexTransactionIds();
+  const known = airwallexKnownIds(sheetTransactionIds);
   const parsed = parseBalanceActivityCsv(csv).filter((row) => row.walletCurrency.toUpperCase() === "USD");
-  const skipped = parsed.filter((row) => !affectsAirwallexAccountBalance(row)).map((row) => row.transactionId);
-  if (skipped.length) rememberAirwallexTransactionIds(skipped);
-  return parsed
-    .filter(affectsAirwallexAccountBalance)
-    .filter((row) => !known.has(row.transactionId))
-    .filter((row) => sinceMs <= 0 || rowTimeMs(row) > sinceMs)
-    .sort((a, b) => rowTimeMs(a) - rowTimeMs(b));
+  return filterNewAirwallexUsdRows(parsed, known, sinceMs);
 }
 
-export async function syncAirwallexUsdTransactionsToSheet(sinceMs = 0): Promise<{ transactions: AirwallexUsdSheetRow[]; sheet: Record<string, unknown> }> {
+export async function syncAirwallexUsdTransactionsToSheet(
+  sinceMs = 0,
+  sheetTransactionIds?: string[],
+): Promise<{ transactions: AirwallexUsdSheetRow[]; sheet: Record<string, unknown> }> {
   const url = config.googleSheetsWebhookUrl;
   if (!url) throw new Error("Set GOOGLE_SHEETS_WEBHOOK_URL to your Google Apps Script web app URL.");
 
-  const transactions = await fetchNewAirwallexUsdTransactions(sinceMs);
+  const transactions = await fetchNewAirwallexUsdTransactions(sinceMs, sheetTransactionIds);
   if (!transactions.length) {
     return { transactions: [], sheet: { ok: true, action: "skip", reason: "No new Airwallex USD transactions", added: 0 } };
   }
