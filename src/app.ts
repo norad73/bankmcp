@@ -311,10 +311,15 @@ export function createApp() {
     app.post("/cron/sync-airwallex-usd-transactions", express.json({ limit: "512kb" }), async (req, res) => {
       if (!cronAuth(req, res)) return;
       try {
-        const body = req.body as { sinceMs?: number; knownTransactionIds?: string[] };
+        const body = req.body as { sinceMs?: number; knownTransactionIds?: string[]; anchorAccountBalance?: number };
         const sinceMs = Number(body?.sinceMs ?? 0) || 0;
         const knownTransactionIds = Array.isArray(body?.knownTransactionIds) ? body.knownTransactionIds : undefined;
-        const result = await syncAirwallexUsdTransactionsToSheet(sinceMs, knownTransactionIds);
+        const anchorAccountBalance = Number(body?.anchorAccountBalance);
+        const result = await syncAirwallexUsdTransactionsToSheet(
+          sinceMs,
+          knownTransactionIds,
+          Number.isFinite(anchorAccountBalance) ? anchorAccountBalance : undefined,
+        );
         log(`sync-airwallex-usd-transactions: ${result.transactions.length} new transaction(s)`);
         res.json({ ok: true, count: result.transactions.length, ...result.sheet });
       } catch (err) {

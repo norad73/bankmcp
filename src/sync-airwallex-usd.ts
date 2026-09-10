@@ -63,6 +63,26 @@ function rowTimeMs(row: AirwallexUsdSheetRow): number {
   return Number.isFinite(ms) ? ms : 0;
 }
 
+export function airwallexBalanceDelta(row: AirwallexUsdSheetRow): number {
+  const credit = Number(row.creditNetAmount) || 0;
+  const debit = Number(row.debitNetAmount) || 0;
+  return credit - debit;
+}
+
+export function validatesAirwallexBalanceChain(
+  rows: AirwallexUsdSheetRow[],
+  startBalance?: number,
+): boolean {
+  let prev = startBalance;
+  for (const row of rows) {
+    const curr = Number(row.accountBalance);
+    if (!Number.isFinite(curr)) return false;
+    if (prev !== undefined && Math.abs(prev + airwallexBalanceDelta(row) - curr) > 0.015) return false;
+    prev = curr;
+  }
+  return true;
+}
+
 function parseNumeric(value: string): string | number {
   const text = value.trim().replace(/,/g, "");
   if (!text) return "";
@@ -121,6 +141,7 @@ export function filterNewAirwallexUsdRows(
   rows: AirwallexUsdSheetRow[],
   known: Set<string>,
   sinceMs = 0,
+  opts?: { skipSinceFilter?: boolean },
 ): AirwallexUsdSheetRow[] {
   const skipped = rows.filter((row) => !affectsAirwallexAccountBalance(row)).map((row) => row.transactionId);
   if (skipped.length) rememberAirwallexTransactionIds(skipped);
@@ -129,10 +150,35 @@ export function filterNewAirwallexUsdRows(
   for (const row of rows) {
     if (!affectsAirwallexAccountBalance(row)) continue;
     if (known.has(row.transactionId)) continue;
-    if (sinceMs > 0 && rowTimeMs(row) <= sinceMs) continue;
+    if (!opts?.skipSinceFilter && sinceMs > 0 && rowTimeMs(row) <= sinceMs) continue;
     out.push(row);
   }
   return out;
+}
+
+function assertAirwallexBalanceOrder(
+  rows: AirwallexUsdSheetRow[],
+  anchorAccountBalance?: number,
+): void {
+  if (!rows.length) return;
+  if (anchorAccountBalance !== undefined && Number.isFinite(anchorAccountBalance)) {
+    const first = rows[0]!;
+    const expected = anchorAccountBalance + airwallexBalanceDelta(first);
+    const actual = Number(first.accountBalance);
+    if (Math.abs(expected - actual) > 0.015) {
+      throw new Error(
+        "First new row does not continue from the sheet Account Balance. "
+        + "The manual rows above may include different transactions than the Airwallex report (e.g. auth holds). "
+        + "Delete the mismatched block and sync again.",
+      );
+    }
+  }
+  if (!validatesAirwallexBalanceChain(rows)) {
+    throw new Error(
+      "New Airwallex rows are not in balance order. "
+      + "Delete any partial synced block and run sync again without leaving gaps.",
+    );
+  }
 }
 
 function airwallexKnownIds(sheetTransactionIds?: string[]): Set<string> {
@@ -143,6 +189,7 @@ function airwallexKnownIds(sheetTransactionIds?: string[]): Set<string> {
 export async function fetchNewAirwallexUsdTransactions(
   sinceMs = 0,
   sheetTransactionIds?: string[],
+  anchorAccountBalance?: number,
 ): Promise<AirwallexUsdSheetRow[]> {
   if (!isAirwallexConfigured()) return [];
   const fromDate = sinceToFromDate(sinceMs);
@@ -155,17 +202,22 @@ export async function fetchNewAirwallexUsdTransactions(
   });
   const known = airwallexKnownIds(sheetTransactionIds);
   const parsed = parseBalanceActivityCsv(csv).filter((row) => row.walletCurrency.toUpperCase() === "USD");
-  return filterNewAirwallexUsdRows(parsed, known, sinceMs);
+  const rows = filterNewAirwallexUsdRows(parsed, known, sinceMs, {
+    skipSinceFilter: sheetTransactionIds !== undefined,
+  });
+  assertAirwallexBalanceOrder(rows, anchorAccountBalance);
+  return rows;
 }
 
 export async function syncAirwallexUsdTransactionsToSheet(
   sinceMs = 0,
   sheetTransactionIds?: string[],
+  anchorAccountBalance?: number,
 ): Promise<{ transactions: AirwallexUsdSheetRow[]; sheet: Record<string, unknown> }> {
   const url = config.googleSheetsWebhookUrl;
   if (!url) throw new Error("Set GOOGLE_SHEETS_WEBHOOK_URL to your Google Apps Script web app URL.");
 
-  const transactions = await fetchNewAirwallexUsdTransactions(sinceMs, sheetTransactionIds);
+  const transactions = await fetchNewAirwallexUsdTransactions(sinceMs, sheetTransactionIds, anchorAccountBalance);
   if (!transactions.length) {
     return { transactions: [], sheet: { ok: true, action: "skip", reason: "No new Airwallex USD transactions", added: 0 } };
   }

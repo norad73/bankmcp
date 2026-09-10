@@ -3,8 +3,10 @@ import { test } from "node:test";
 import { parseCsv } from "../src/parse-csv.ts";
 import {
   affectsAirwallexAccountBalance,
+  airwallexBalanceDelta,
   filterNewAirwallexUsdRows,
   parseBalanceActivityCsv,
+  validatesAirwallexBalanceChain,
   type AirwallexUsdSheetRow,
 } from "../src/sync-airwallex-usd.ts";
 
@@ -90,4 +92,32 @@ test("filterNewAirwallexUsdRows preserves BAR row order for same-day transaction
   const rows = [row("first-in-report", 100), row("second-in-report", 90)];
   const filtered = filterNewAirwallexUsdRows(rows, new Set(), 0);
   assert.deepEqual(filtered.map((r) => r.transactionId), ["first-in-report", "second-in-report"]);
+});
+
+test("validatesAirwallexBalanceChain uses debit/credit net not amount", () => {
+  const row = (id: string, debit: number, credit: number, balance: number): AirwallexUsdSheetRow => ({
+    transactionId: id,
+    time: "2026-09-01T12:00:00-0700",
+    type: "CARD",
+    financialTransactionType: "CARD_PURCHASE",
+    description: "",
+    walletCurrency: "USD",
+    targetCurrency: "",
+    targetAmount: "",
+    conversionRate: "",
+    matureDate: "",
+    amount: debit || credit,
+    fee: "",
+    debitNetAmount: debit,
+    creditNetAmount: credit,
+    availableBalance: balance,
+    accountBalance: balance,
+    createdAt: "2026-09-01T12:00:00-0700",
+    requestId: "",
+    reference: "",
+    noteToSelf: "",
+  });
+  const rows = [row("a", 10, 0, 100), row("b", 5, 0, 95)];
+  assert.equal(airwallexBalanceDelta(rows[1]!), -5);
+  assert.equal(validatesAirwallexBalanceChain(rows, 110), true);
 });
