@@ -186,10 +186,11 @@ export async function createBalanceActivityReport(opts: {
   const data = (await airwallexPost("/api/v1/finance/financial_reports/create", {
     type: "BALANCE_ACTIVITY_REPORT",
     file_format: "CSV",
+    file_name: `BALANCE_ACTIVITY_REPORT_${opts.currency}_${opts.toDate}.csv`,
     currencies: [opts.currency],
-    from_date: opts.fromDate,
-    to_date: opts.toDate,
-    time_zone: opts.timeZone ?? "UTC",
+    from_created_at: opts.fromDate,
+    to_created_at: opts.toDate,
+    time_zone: opts.timeZone ?? "",
     report_version: "1.2.0",
     report_options: { include_reservations: true },
   })) as AirwallexFinancialReport;
