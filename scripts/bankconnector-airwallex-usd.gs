@@ -1,5 +1,5 @@
 // BankConnector — append new rows on the "Airwallex USD" transactions tab.
-// Script version: 0.4.31 (keep in sync with BankConnector app version)
+// Script version: 0.4.33 (keep in sync with BankConnector app version)
 // Paste with bankconnector-shared.gs and bankconnector-balances.gs in the same Apps Script project.
 
 var AIRWALLEX_USD_SHEET_NAME = "Airwallex USD";
@@ -168,7 +168,7 @@ function writeAirwallexUsdRows_(sheet, startRow, colMap, transactions) {
   var endRow = startRow + transactions.length - 1;
   writeAirwallexUsdColumn_(sheet, startRow, endRow, colMap.time, transactions, function (tx) {
     return airwallexUsdSheetTime_(tx.time);
-  });
+  }, "@");
   writeAirwallexUsdColumn_(sheet, startRow, endRow, colMap.type, transactions, function (tx) {
     return tx.type;
   });
@@ -216,7 +216,7 @@ function writeAirwallexUsdRows_(sheet, startRow, colMap, transactions) {
   });
   writeAirwallexUsdColumn_(sheet, startRow, endRow, colMap.createdAt, transactions, function (tx) {
     return airwallexUsdSheetTime_(tx.createdAt);
-  });
+  }, "@");
   writeAirwallexUsdColumn_(sheet, startRow, endRow, colMap.requestId, transactions, function (tx) {
     return tx.requestId;
   });
@@ -228,18 +228,19 @@ function writeAirwallexUsdRows_(sheet, startRow, colMap, transactions) {
   });
 }
 
-function writeAirwallexUsdColumn_(sheet, startRow, endRow, col, transactions, pick) {
+function writeAirwallexUsdColumn_(sheet, startRow, endRow, col, transactions, pick, numberFormat) {
   if (!col) return;
   var values = transactions.map(function (tx) {
     var value = pick(tx);
     if (value === undefined || value === null || value === "") return [""];
     return [value];
   });
-  sheetRect_(sheet, startRow, col, endRow, col).setValues(values);
+  var range = sheetRect_(sheet, startRow, col, endRow, col);
+  range.setValues(values);
+  if (numberFormat) range.setNumberFormat(numberFormat);
 }
 
 function airwallexUsdSheetTime_(iso) {
-  var ms = Date.parse(String(iso || ""));
-  if (!isNaN(ms)) return new Date(ms);
-  return String(iso || "");
+  // Keep BAR timestamps as text (e.g. 2026-08-25T18:15:17-0700), not Sheet date cells.
+  return String(iso || "").trim();
 }
