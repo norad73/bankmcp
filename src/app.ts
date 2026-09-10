@@ -273,7 +273,7 @@ export function createApp() {
       }
     });
 
-    app.get("/debug/airwallex-transactions", async (req, res) => {
+    app.get("/cron/debug/airwallex-transactions", async (req, res) => {
       if (!cronAuth(req, res)) return;
       try {
         const { items, hasMore } = await listAirwallexFinancialTransactions({
