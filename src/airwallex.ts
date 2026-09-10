@@ -84,15 +84,37 @@ async function getAccessToken(): Promise<string> {
   return data.token;
 }
 
-async function airwallexGet(path: string): Promise<unknown> {
+async function authHeaders(contentType?: string): Promise<Record<string, string>> {
   const token = await getAccessToken();
   const headers: Record<string, string> = {
     Accept: "application/json",
     Authorization: `Bearer ${token}`,
   };
+  if (contentType) headers["Content-Type"] = contentType;
   if (config.airwallexAccountId) headers["x-login-as"] = config.airwallexAccountId;
+  return headers;
+}
 
-  const res = await fetch(`${config.airwallexApiBase}${path}`, { headers });
+async function airwallexGet(path: string): Promise<unknown> {
+  const res = await fetch(`${config.airwallexApiBase}${path}`, { headers: await authHeaders() });
+  const text = await res.text();
+  if (!res.ok) throw new AirwallexError(res.status, text);
+  return text ? JSON.parse(text) : {};
+}
+
+async function airwallexGetText(path: string): Promise<string> {
+  const res = await fetch(`${config.airwallexApiBase}${path}`, { headers: await authHeaders() });
+  const text = await res.text();
+  if (!res.ok) throw new AirwallexError(res.status, text);
+  return text;
+}
+
+async function airwallexPost(path: string, body: unknown): Promise<unknown> {
+  const res = await fetch(`${config.airwallexApiBase}${path}`, {
+    method: "POST",
+    headers: await authHeaders("application/json"),
+    body: JSON.stringify(body),
+  });
   const text = await res.text();
   if (!res.ok) throw new AirwallexError(res.status, text);
   return text ? JSON.parse(text) : {};
@@ -144,4 +166,68 @@ export async function listAirwallexFinancialTransactions(opts: {
     has_more?: boolean;
   };
   return { items: data.items ?? [], hasMore: Boolean(data.has_more) };
+}
+
+export interface AirwallexFinancialReport {
+  id: string;
+  status: string;
+  type: string;
+  file_format?: string;
+  file_name?: string;
+}
+
+export async function createBalanceActivityReport(opts: {
+  currency: string;
+  fromDate: string;
+  toDate: string;
+  timeZone?: string;
+}): Promise<AirwallexFinancialReport> {
+  if (!isAirwallexConfigured()) throw new AirwallexError(503, "Airwallex not configured");
+  const data = (await airwallexPost("/api/v1/finance/financial_reports/create", {
+    type: "BALANCE_ACTIVITY_REPORT",
+    file_format: "CSV",
+    currencies: [opts.currency],
+    from_date: opts.fromDate,
+    to_date: opts.toDate,
+    time_zone: opts.timeZone ?? "UTC",
+    report_version: "1.2.0",
+    report_options: { include_reservations: true },
+  })) as AirwallexFinancialReport;
+  if (!data.id) throw new AirwallexError(500, "Report create returned no id");
+  return data;
+}
+
+export async function getFinancialReport(id: string): Promise<AirwallexFinancialReport> {
+  return (await airwallexGet(`/api/v1/finance/financial_reports/${encodeURIComponent(id)}`)) as AirwallexFinancialReport;
+}
+
+export async function downloadFinancialReportContent(id: string): Promise<string> {
+  return airwallexGetText(`/api/v1/finance/financial_reports/${encodeURIComponent(id)}/content`);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function fetchBalanceActivityReportCsv(opts: {
+  currency: string;
+  fromDate: string;
+  toDate: string;
+  timeZone?: string;
+  pollMs?: number;
+  timeoutMs?: number;
+}): Promise<{ report: AirwallexFinancialReport; csv: string }> {
+  const report = await createBalanceActivityReport(opts);
+  const deadline = Date.now() + (opts.timeoutMs ?? 120_000);
+  let latest = report;
+  while (Date.now() < deadline) {
+    latest = await getFinancialReport(report.id);
+    if (latest.status === "COMPLETED") {
+      const csv = await downloadFinancialReportContent(report.id);
+      return { report: latest, csv };
+    }
+    if (latest.status === "FAILED") throw new AirwallexError(500, `Report ${report.id} failed`);
+    await sleep(opts.pollMs ?? 2000);
+  }
+  throw new AirwallexError(504, `Report ${report.id} timed out (status ${latest.status})`);
 }

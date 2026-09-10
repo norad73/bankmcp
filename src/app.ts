@@ -19,7 +19,7 @@ import { seedBalanceCacheForLabel } from "./seed-cache.ts";
 import { ebLog } from "./eb-log.ts";
 import { probeEnableBankingSessions, readEbDebugLogTail, summarizeSessionCreation } from "./investigate-eb.ts";
 import { buildSheetBalancePayload } from "./sheet-balances.ts";
-import { listAirwallexFinancialTransactions } from "./airwallex.ts";
+import { fetchBalanceActivityReportCsv, listAirwallexFinancialTransactions } from "./airwallex.ts";
 import { syncMercuryTransactionsToSheet } from "./sync-mercury.ts";
 
 export function createApp() {
@@ -270,6 +270,26 @@ export function createApp() {
       } catch (err) {
         log("sync-balances failed", (err as Error).message);
         res.status(500).json({ error: (err as Error).message });
+      }
+    });
+
+    app.get("/cron/debug/airwallex-balance-activity", async (req, res) => {
+      if (!cronAuth(req, res)) return;
+      try {
+        const currency = String(req.query.currency ?? "USD");
+        const fromDate = String(req.query.from ?? "2026-08-25");
+        const toDate = String(req.query.to ?? "2026-08-31");
+        const { report, csv } = await fetchBalanceActivityReportCsv({ currency, fromDate, toDate });
+        const lines = csv.trim().split(/\r?\n/);
+        res.json({
+          ok: true,
+          report,
+          lineCount: lines.length,
+          header: lines[0] ?? "",
+          previewRows: lines.slice(1, 6),
+        });
+      } catch (err) {
+        res.status(500).json({ ok: false, error: (err as Error).message });
       }
     });
 
