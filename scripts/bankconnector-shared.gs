@@ -1,5 +1,5 @@
 // BankConnector — shared helpers for Google Sheets scripts.
-// Script version: 0.4.25 (keep in sync with BankConnector app version)
+// Script version: 0.4.31 (keep in sync with BankConnector app version)
 
 function log_(message, detail) {
   var line = detail !== undefined ? message + " " + JSON.stringify(detail) : message;

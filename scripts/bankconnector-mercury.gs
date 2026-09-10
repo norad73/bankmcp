@@ -1,5 +1,5 @@
 // BankConnector — append new rows on the "Mercury" transactions tab.
-// Script version: 0.4.27 (keep in sync with BankConnector app version)
+// Script version: 0.4.31 (keep in sync with BankConnector app version)
 // Paste with bankconnector-shared.gs and bankconnector-balances.gs in the same Apps Script project.
 
 var MERCURY_SHEET_NAME = "Mercury";

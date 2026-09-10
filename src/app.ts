@@ -20,6 +20,7 @@ import { ebLog } from "./eb-log.ts";
 import { probeEnableBankingSessions, readEbDebugLogTail, summarizeSessionCreation } from "./investigate-eb.ts";
 import { buildSheetBalancePayload } from "./sheet-balances.ts";
 import { fetchBalanceActivityReportCsv, listAirwallexFinancialTransactions } from "./airwallex.ts";
+import { syncAirwallexUsdTransactionsToSheet } from "./sync-airwallex-usd.ts";
 import { syncMercuryTransactionsToSheet } from "./sync-mercury.ts";
 
 export function createApp() {
@@ -304,6 +305,19 @@ export function createApp() {
         res.json({ ok: true, hasMore, items });
       } catch (err) {
         res.status(500).json({ ok: false, error: (err as Error).message });
+      }
+    });
+
+    app.post("/cron/sync-airwallex-usd-transactions", express.json({ limit: "512kb" }), async (req, res) => {
+      if (!cronAuth(req, res)) return;
+      try {
+        const sinceMs = Number((req.body as { sinceMs?: number })?.sinceMs ?? 0) || 0;
+        const result = await syncAirwallexUsdTransactionsToSheet(sinceMs);
+        log(`sync-airwallex-usd-transactions: ${result.transactions.length} new transaction(s)`);
+        res.json({ ok: true, count: result.transactions.length, ...result.sheet });
+      } catch (err) {
+        log("sync-airwallex-usd-transactions failed", (err as Error).message);
+        res.status(500).json({ error: (err as Error).message });
       }
     });
 
