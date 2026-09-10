@@ -1,5 +1,6 @@
 // BankConnector — append new rows on the "Airwallex USD" transactions tab.
-// Script version: 0.4.35 (keep in sync with BankConnector app version)
+// Script version: 0.4.36 (keep in sync with BankConnector app version)
+// Requires UNIQUE_ID(datetime, description, amount, length) in the same Apps Script project.
 // Paste with bankconnector-shared.gs and bankconnector-balances.gs in the same Apps Script project.
 
 var AIRWALLEX_USD_SHEET_NAME = "Airwallex USD";
@@ -181,6 +182,10 @@ function copyAirwallexUsdRowFormats_(sheet, templateRow, startRow, count) {
 
 function writeAirwallexUsdRows_(sheet, startRow, colMap, transactions) {
   var endRow = startRow + transactions.length - 1;
+  var uniqueIdCol = findAirwallexUsdUniqueIdColumn_(sheet);
+  writeAirwallexUsdColumn_(sheet, startRow, endRow, uniqueIdCol, transactions, function (tx) {
+    return airwallexUsdUniqueId_(tx);
+  });
   writeAirwallexUsdColumn_(sheet, startRow, endRow, colMap.time, transactions, function (tx) {
     return airwallexUsdSheetTime_(tx.time);
   }, "@");
@@ -253,6 +258,21 @@ function writeAirwallexUsdColumn_(sheet, startRow, endRow, col, transactions, pi
   var range = sheetRect_(sheet, startRow, col, endRow, col);
   range.setValues(values);
   if (numberFormat) range.setNumberFormat(numberFormat);
+}
+
+function findAirwallexUsdUniqueIdColumn_(sheet) {
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var idx = headers.indexOf("UniqueID");
+  return idx >= 0 ? idx + 1 : 1;
+}
+
+function airwallexUsdUniqueId_(tx) {
+  if (typeof UNIQUE_ID !== "function") {
+    throw new Error("UNIQUE_ID custom function not found in this Apps Script project");
+  }
+  var amount = tx.amount;
+  if (amount === "" || amount === null || amount === undefined) amount = 0;
+  return UNIQUE_ID(tx.time, tx.description, amount, 12);
 }
 
 function airwallexUsdSheetTime_(iso) {
