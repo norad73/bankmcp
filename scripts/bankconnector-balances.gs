@@ -1,5 +1,5 @@
 // BankConnector — fill the "Balances" and "CC" tabs from live bank data.
-// Script version: 0.4.25 (keep in sync with BankConnector app version)
+// Script version: 0.4.28 (keep in sync with BankConnector app version)
 //
 // Setup: paste ALL bankconnector-*.gs files from scripts/ into the spreadsheet Apps Script project:
 //   bankconnector-shared.gs, bankconnector-balances.gs, bankconnector-mercury.gs
@@ -28,7 +28,8 @@ const COL = {
 
 const CC_COL = { date: 1, close: 2 };
 
-function onOpen() {
+// Call this from your own onOpen() — only one onOpen() is allowed per project.
+function installBankConnectorMenu_() {
   SpreadsheetApp.getUi()
     .createMenu("BankConnector")
     .addItem("Fill balances sheet", "fillBalancesSheet")
