@@ -1,13 +1,9 @@
 // BankConnector — fill the "Balances" and "CC" tabs from live bank data.
-// Script version: 0.4.19 (keep in sync with BankConnector app version)
+// Script version: 0.4.23 (keep in sync with BankConnector app version)
 //
-// Setup:
-// 1. Extensions → Apps Script — paste this file into the spreadsheet-bound project.
-// 2. Script properties (Project settings → Script properties):
-//      BANKCONNECTOR_URL = https://bankconnector.onrender.com
-//      CRON_SECRET       = (same value as on Render)
-// 3. Reload the sheet — onOpen adds BankConnector menu.
-// 4. Deploy → Web app (Execute as: Me, Anyone) — same URL in Render GOOGLE_SHEETS_WEBHOOK_URL.
+// Setup: paste ALL bankconnector-*.gs files from scripts/ into the spreadsheet Apps Script project:
+//   bankconnector-shared.gs, bankconnector-balances.gs, bankconnector-mercury.gs
+// Then deploy a new version of the existing web app (same URL).
 
 const SHEET_NAME = "Balances";
 const CC_SHEET_NAME = "CC";
@@ -32,48 +28,47 @@ const COL = {
 
 const CC_COL = { date: 1, close: 2 };
 
-function log_(message, detail) {
-  var line = detail !== undefined ? message + " " + JSON.stringify(detail) : message;
-  console.log("[BankConnector] " + line);
-}
-
 function onOpen() {
-  setupFillButtonMenu();
-}
-
-function setupFillButtonMenu() {
   SpreadsheetApp.getUi()
     .createMenu("BankConnector")
     .addItem("Fill balances sheet", "fillBalancesSheet")
+    .addItem("Fill Mercury transactions", "fillMercuryTransactions")
     .addToUi();
 }
 
 function doGet() {
-  return json({ ok: true, service: "BankConnector", action: "Use POST { action: 'fill', columns: {...}, eurUsdClose: ... } or run fillBalancesSheet from the sheet." });
+  return json({
+    ok: true,
+    service: "BankConnector",
+    action: "Use POST { action: 'fill' | 'fill-mercury', ... } or run menu items from the sheet.",
+  });
 }
 
 function doPost(e) {
   log_("doPost started");
   const body = e && e.postData ? JSON.parse(e.postData.contents) : {};
-  log_("doPost body", { action: body.action, date: body.date, fxDate: body.fxDate, eurUsdClose: body.eurUsdClose, source: body.source });
+  log_("doPost body", { action: body.action, source: body.source });
   if (body.action === "fill") {
     const result = fillSheetsImpl_(body);
     log_("doPost done", { action: result.action, row: result.row, cc: result.cc });
     return json(result);
   }
+  if (body.action === "fill-mercury") {
+    const result = fillMercuryTransactionsImpl_(body);
+    log_("doPost done", result);
+    return json(result);
+  }
   log_("doPost unknown action", body.action);
-  return json({ ok: false, error: "Unknown action. Use { action: 'fill' }." });
+  return json({ ok: false, error: "Unknown action. Use { action: 'fill' } or { action: 'fill-mercury' }." });
 }
 
-/** Menu / button — ask BankConnector to fetch balances and POST them back here. */
 function fillBalancesSheet() {
   log_("fillBalancesSheet started (menu)");
   try {
-    const result = triggerBankConnectorFill_();
+    const result = callBankConnector_("/cron/sync-balances");
     log_("fillBalancesSheet done", { action: result.action, row: result.row, cc: result.cc });
     try {
-      const msg = formatFillAlert_(result);
-      SpreadsheetApp.getUi().alert(msg);
+      SpreadsheetApp.getUi().alert(formatFillAlert_(result));
     } catch (ignore) {}
     return result;
   } catch (err) {
@@ -92,45 +87,6 @@ function formatFillAlert_(result) {
     else parts.push("CC: filled row " + result.cc.row + " (" + result.cc.date + ", " + result.cc.close + ")");
   }
   return parts.join("\n");
-}
-
-function triggerBankConnectorFill_() {
-  const props = PropertiesService.getScriptProperties();
-  const base = (props.getProperty("BANKCONNECTOR_URL") || "").trim().replace(/\/$/, "");
-  const secret = (props.getProperty("CRON_SECRET") || "").trim();
-  if (!base || !/^https:\/\//.test(base)) {
-    throw new Error("Set Script property BANKCONNECTOR_URL to https://bankconnector.onrender.com");
-  }
-  if (!secret) throw new Error("Set Script property CRON_SECRET (from Render environment)");
-
-  const url = base + "/cron/sync-balances";
-  log_("calling BankConnector", { url: url });
-  const res = UrlFetchApp.fetch(url, {
-    method: "post",
-    headers: { Authorization: "Bearer " + secret },
-    muteHttpExceptions: true,
-  });
-  const code = res.getResponseCode();
-  log_("BankConnector response", { http: code, bytes: res.getContentText().length });
-  return parseBankConnectorResponse_(res.getContentText(), code);
-}
-
-function parseBankConnectorResponse_(text, code) {
-  try {
-    const data = JSON.parse(text);
-    if (code >= 400) throw new Error(data.error || text.slice(0, 200));
-    if (data.action) return data;
-    if (data.ok === false) throw new Error(data.error || "BankConnector fill failed");
-    return data;
-  } catch (err) {
-    if (err.message && err.message.indexOf("BankConnector") === 0) throw err;
-    if (err.message && err.message.indexOf("Set Script") === 0) throw err;
-    throw new Error(
-      "BankConnector returned non-JSON (HTTP " + code + "). "
-      + "Check BANKCONNECTOR_URL and CRON_SECRET in Script properties. "
-      + "Response starts with: " + String(text).slice(0, 80),
-    );
-  }
 }
 
 function fillSheetsImpl_(body) {
@@ -225,10 +181,6 @@ function getBalancesSheet_() {
   return sheet;
 }
 
-function athensDateString_() {
-  return Utilities.formatDate(new Date(), "Europe/Athens", "yyyy-MM-dd");
-}
-
 function toIsoDate_(value) {
   if (value instanceof Date) return Utilities.formatDate(value, "Europe/Athens", "yyyy-MM-dd");
   const text = String(value || "").trim();
@@ -287,15 +239,6 @@ function writeBalanceValues_(sheet, row, columns) {
   });
 }
 
-function copyRowFormat_(sheet, fromRow, toRow) {
-  const lastCol = sheet.getLastColumn();
-  sheet.getRange(fromRow, 1, fromRow, lastCol).copyTo(
-    sheet.getRange(toRow, 1, toRow, lastCol),
-    SpreadsheetApp.CopyPasteType.PASTE_FORMAT,
-    false,
-  );
-}
-
 function copyTotalFormula_(sheet, templateRow, row) {
   const formula = sheet.getRange(templateRow, COL.total).getFormula();
   if (formula) {
@@ -303,8 +246,4 @@ function copyTotalFormula_(sheet, templateRow, row) {
     return;
   }
   sheet.getRange(row, COL.total).setFormula("=SUM(C" + row + ":Q" + row + ")");
-}
-
-function json(obj) {
-  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }

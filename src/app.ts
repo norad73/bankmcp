@@ -19,6 +19,7 @@ import { seedBalanceCacheForLabel } from "./seed-cache.ts";
 import { ebLog } from "./eb-log.ts";
 import { probeEnableBankingSessions, readEbDebugLogTail, summarizeSessionCreation } from "./investigate-eb.ts";
 import { buildSheetBalancePayload } from "./sheet-balances.ts";
+import { syncMercuryTransactionsToSheet } from "./sync-mercury.ts";
 
 export function createApp() {
   const log = (msg: string, extra?: unknown) => console.log(`[bank ${new Date().toISOString()}] ${msg}`, extra ?? "");
@@ -267,6 +268,19 @@ export function createApp() {
         res.json({ ok: true, count: result.rows.length, ...result.sheet });
       } catch (err) {
         log("sync-balances failed", (err as Error).message);
+        res.status(500).json({ error: (err as Error).message });
+      }
+    });
+
+    app.post("/cron/sync-mercury-transactions", express.json({ limit: "512kb" }), async (req, res) => {
+      if (!cronAuth(req, res)) return;
+      try {
+        const sinceMs = Number((req.body as { sinceMs?: number })?.sinceMs ?? 0) || 0;
+        const result = await syncMercuryTransactionsToSheet(sinceMs);
+        log(`sync-mercury-transactions: ${result.transactions.length} new transaction(s)`);
+        res.json({ ok: true, count: result.transactions.length, ...result.sheet });
+      } catch (err) {
+        log("sync-mercury-transactions failed", (err as Error).message);
         res.status(500).json({ error: (err as Error).message });
       }
     });

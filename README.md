@@ -9,7 +9,7 @@ Pulls balances from Enable Banking (PSD2), Viva, Airwallex, Stripe, and PayPal, 
 1. Push to GitHub and connect the repo on [Render](https://render.com).
 2. Apply `render.yaml` (web service `bankconnector` + daily cron).
 3. Set env vars for each payment provider you use.
-4. Deploy `scripts/google-sheets-webhook.gs` on the spreadsheet (Extensions → Apps Script). Set script properties `BANKCONNECTOR_URL` and `CRON_SECRET`, deploy as web app, paste the URL into `GOOGLE_SHEETS_WEBHOOK_URL`. Use **BankConnector → Fill balances sheet** or insert a button assigned to `fillBalancesSheet`.
+4. Paste all `scripts/bankconnector-*.gs` files into the spreadsheet Apps Script project. Set script properties `BANKCONNECTOR_URL` and `CRON_SECRET`, deploy as web app, paste the URL into `GOOGLE_SHEETS_WEBHOOK_URL`. Use **BankConnector → Fill balances sheet** / **Fill Mercury transactions**.
 5. Connect banks via `/connect?bank=Eurobank` (or Wise, etc.).
 
 ## Local
