@@ -104,3 +104,44 @@ export async function listAirwallexBalances(): Promise<AirwallexBalance[]> {
   const list = (Array.isArray(data) ? data : []) as Record<string, unknown>[];
   return list.map(normalizeBalance).filter((b): b is AirwallexBalance => Boolean(b));
 }
+
+export interface AirwallexFinancialTransaction {
+  id: string;
+  amount: number;
+  batch_id?: string;
+  client_rate?: number;
+  created_at: string;
+  currency: string;
+  currency_pair?: string;
+  description?: string;
+  estimated_settled_at?: string;
+  fee?: number;
+  funding_source_id?: string;
+  net: number;
+  settled_at?: string;
+  source_id?: string;
+  source_type?: string;
+  status: string;
+  transaction_type: string;
+}
+
+export async function listAirwallexFinancialTransactions(opts: {
+  currency?: string;
+  fromCreatedAt?: string;
+  toCreatedAt?: string;
+  pageSize?: number;
+  pageNum?: number;
+} = {}): Promise<{ items: AirwallexFinancialTransaction[]; hasMore: boolean }> {
+  if (!isAirwallexConfigured()) return { items: [], hasMore: false };
+  const params = new URLSearchParams();
+  if (opts.currency) params.set("currency", opts.currency);
+  if (opts.fromCreatedAt) params.set("from_created_at", opts.fromCreatedAt);
+  if (opts.toCreatedAt) params.set("to_created_at", opts.toCreatedAt);
+  params.set("page_size", String(opts.pageSize ?? 10));
+  params.set("page_num", String(opts.pageNum ?? 0));
+  const data = (await airwallexGet(`/api/v1/financial_transactions?${params}`)) as {
+    items?: AirwallexFinancialTransaction[];
+    has_more?: boolean;
+  };
+  return { items: data.items ?? [], hasMore: Boolean(data.has_more) };
+}

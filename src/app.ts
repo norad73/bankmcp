@@ -19,6 +19,7 @@ import { seedBalanceCacheForLabel } from "./seed-cache.ts";
 import { ebLog } from "./eb-log.ts";
 import { probeEnableBankingSessions, readEbDebugLogTail, summarizeSessionCreation } from "./investigate-eb.ts";
 import { buildSheetBalancePayload } from "./sheet-balances.ts";
+import { listAirwallexFinancialTransactions } from "./airwallex.ts";
 import { syncMercuryTransactionsToSheet } from "./sync-mercury.ts";
 
 export function createApp() {
@@ -269,6 +270,20 @@ export function createApp() {
       } catch (err) {
         log("sync-balances failed", (err as Error).message);
         res.status(500).json({ error: (err as Error).message });
+      }
+    });
+
+    app.get("/debug/airwallex-transactions", async (req, res) => {
+      if (!cronAuth(req, res)) return;
+      try {
+        const { items, hasMore } = await listAirwallexFinancialTransactions({
+          currency: String(req.query.currency ?? "USD"),
+          pageSize: Number(req.query.limit ?? 5) || 5,
+          fromCreatedAt: String(req.query.from ?? "2026-08-01T00:00:00Z"),
+        });
+        res.json({ ok: true, hasMore, items });
+      } catch (err) {
+        res.status(500).json({ ok: false, error: (err as Error).message });
       }
     });
 
