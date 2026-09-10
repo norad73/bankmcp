@@ -1,5 +1,13 @@
 // The few HTML pages this server shows a human: the OAuth sign-in, the
 // result of a bank connection, and a status page. No external assets.
+import {
+  groupAvailableSummary,
+  groupBalanceRows,
+  groupNonZeroCount,
+  groupUsdTotal,
+  rowAmount,
+  type BalanceDisplayRow,
+} from "./balance-groups.ts";
 import { config } from "./config.ts";
 import type { FxRates } from "./fx.ts";
 import { amountInUsd } from "./fx.ts";
@@ -157,18 +165,7 @@ export const termsPage = () =>
      <p>Use at your own risk. The software is provided as is, without warranty of any kind, under the MIT licence. Its authors accept no liability for its use and are not a party to the operator's agreements with Enable Banking or any bank.</p>`,
   );
 
-export interface BalanceDisplayRow {
-  uid: string;
-  source: string;
-  logo?: string;
-  account: string;
-  currency: string;
-  booked?: number;
-  available?: number;
-  error?: string;
-  cached?: boolean;
-  fetchedAt?: string;
-}
+export type { BalanceDisplayRow } from "./balance-groups.ts";
 
 const fmtMoney = (amount: number | undefined, currency: string) => {
   if (amount === undefined) return "—";
@@ -203,6 +200,11 @@ table.bal .refreshbtn{margin:0;padding:4px 8px;width:auto;font-size:12px;font-we
 table.bal .refreshbtn-all{font-size:14px;font-weight:900;border-color:var(--ink)}
 table.bal .refreshbtn:hover{background:var(--bg);opacity:1}
 table.bal .status-cell{cursor:help;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+table.bal tr.group-row td.source{font-weight:600}
+table.bal tr.sub-row.hidden{display:none}
+table.bal tr.sub-row td.account.sub{padding-left:28px;color:var(--muted);font-size:13px}
+table.bal .expandbtn{cursor:pointer;border:none;background:transparent;padding:0 4px 0 0;font:inherit;color:var(--muted);line-height:1}
+table.bal .expandbtn.open{color:var(--ink)}
 .actions{margin-top:16px}
 .actions .muted{font-size:14px;color:var(--muted)}
 </style>`,
@@ -223,10 +225,6 @@ export function siteLoginPage(opts: { returnTo?: string; error?: string } = {}):
      </form>`,
     { kind: "neutral", pill: "Sign in" },
   );
-}
-
-function rowAmount(r: BalanceDisplayRow) {
-  return r.available ?? r.booked;
 }
 
 function fmtFetchedAt(iso?: string) {
@@ -285,6 +283,92 @@ function refreshable(uid: string) {
   return uid && !uid.includes(":error") && !uid.includes(":timeout") && !uid.startsWith("session:");
 }
 
+function groupId(source: string): string {
+  return source.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "bank";
+}
+
+function groupStatus(accounts: BalanceDisplayRow[]): { short: string; detail: string; cls: string } {
+  const failed = accounts.filter((a) => a.error);
+  if (failed.length === accounts.length) {
+    return { short: "Error", detail: failed.map((f) => f.error).join(" · "), cls: "status-err" };
+  }
+  if (failed.length) {
+    return {
+      short: `${failed.length} failed`,
+      detail: failed.map((f) => `${f.account}: ${f.error}`).join(" · "),
+      cls: "status-err",
+    };
+  }
+  const withBalance = accounts.filter((a) => (rowAmount(a) ?? 0) !== 0);
+  if (!withBalance.length) {
+    return { short: "Empty", detail: "All accounts zero or empty", cls: "status-muted" };
+  }
+  const allCached = withBalance.every((a) => a.cached);
+  const anyStale = withBalance.some((a) => a.cached && (cacheAgeMs(a.fetchedAt) ?? 0) >= CACHE_STALE_MS);
+  if (allCached) {
+    return {
+      short: cachedStatusLabel(withBalance[0]?.fetchedAt),
+      detail: `${withBalance.length} account(s) with balance`,
+      cls: anyStale ? "status-err" : "status-ok",
+    };
+  }
+  if (withBalance.every((a) => !a.cached)) {
+    return { short: "Live", detail: `${withBalance.length} account(s) with balance`, cls: "status-ok" };
+  }
+  return { short: "Mixed", detail: "Some cached, some live", cls: "status-muted" };
+}
+
+function renderBalanceRow(r: BalanceDisplayRow, fx: FxRates | undefined, opts: { sub?: boolean } = {}): string {
+  const status = rowStatus(r);
+  const amount = rowAmount(r);
+  const cls = [r.error ? "err" : "", opts.sub ? "sub-row hidden" : ""].filter(Boolean).join(" ");
+  const classAttr = cls ? ` class="${cls}"` : "";
+  const dataAttr = opts.sub ? ` data-group="${esc(groupId(r.source))}"` : "";
+  const available = r.error ? "—" : fmtMoney(amount, r.currency);
+  const usdEquiv = r.error ? "—" : fmtUsdCell(usdAmount(amount, r.currency, fx));
+  const logo = opts.sub
+    ? `<td class="logo"></td>`
+    : r.logo
+      ? `<td class="logo"><img src="${esc(r.logo)}" alt="" width="24" height="24" loading="lazy"></td>`
+      : `<td class="logo"></td>`;
+  const source = opts.sub ? `<td></td>` : `<td>${esc(r.source)}</td>`;
+  const account = opts.sub ? `<td class="account sub">${esc(r.account)}</td>` : `<td>${esc(r.account)}</td>`;
+  const refresh = refreshable(r.uid)
+    ? `<td class="refresh"><form method="post" action="/balances/refresh"><input type="hidden" name="uid" value="${esc(r.uid)}"><button type="submit" class="refreshbtn" title="Fetch fresh balance">↻</button></form></td>`
+    : `<td class="refresh"></td>`;
+  return `<tr${classAttr}${dataAttr}>${logo}${source}${account}<td>${esc(r.currency)}</td><td class="${status.cls} status-cell" title="${esc(status.detail)}">${esc(status.short)}</td><td class="num">${available}</td><td class="num">${usdEquiv}</td>${refresh}</tr>`;
+}
+
+function renderGroupRow(group: ReturnType<typeof groupBalanceRows>[number], fx: FxRates | undefined): string {
+  const { accounts, source, logo } = group;
+  if (accounts.length === 1) return renderBalanceRow(accounts[0]!, fx);
+
+  const id = groupId(source);
+  const status = groupStatus(accounts);
+  const summary = groupAvailableSummary(accounts);
+  const totalUsd = groupUsdTotal(accounts, fx);
+  const count = accounts.length;
+  const active = groupNonZeroCount(accounts);
+  const accountLabel = active ? `${count} accounts · ${active} with balance` : `${count} accounts`;
+  const available = summary ? fmtMoney(summary.amount, summary.currency) : "—";
+  const usdEquiv = fmtUsdCell(totalUsd);
+  const currency = summary?.currency ?? "Multi";
+  const logoCell = logo
+    ? `<td class="logo"><img src="${esc(logo)}" alt="" width="24" height="24" loading="lazy"></td>`
+    : `<td class="logo"></td>`;
+  const header = `<tr class="group-row">${logoCell}<td class="source"><button type="button" class="expandbtn" data-target="${esc(id)}" aria-expanded="false" title="Show accounts">▶</button> ${esc(source)}</td><td>${esc(accountLabel)}</td><td>${esc(currency)}</td><td class="${status.cls} status-cell" title="${esc(status.detail)}">${esc(status.short)}</td><td class="num">${available}</td><td class="num">${usdEquiv}</td><td class="refresh"></td></tr>`;
+  const subs = accounts.map((a) => renderBalanceRow(a, fx, { sub: true })).join("");
+  return header + subs;
+}
+
+function fmtUsdCell(amount: number | undefined) {
+  return amount === undefined ? "—" : fmtMoney(amount, "USD");
+}
+
+function usdAmount(amount: number | undefined, currency: string, fx?: FxRates) {
+  return amountInUsd(amount, currency, fx);
+}
+
 function totalsByCurrency(rows: BalanceDisplayRow[]) {
   const totals = new Map<string, number>();
   for (const r of rows) totals.set(r.currency, (totals.get(r.currency) ?? 0) + (rowAmount(r) ?? 0));
@@ -293,32 +377,21 @@ function totalsByCurrency(rows: BalanceDisplayRow[]) {
 
 export function balancesPage(input: { asOf: string; fetchedAt: string; rows: BalanceDisplayRow[]; fx?: FxRates; error?: string; sheetMessage?: string }): string {
   const rows = input.rows;
+  const groups = groupBalanceRows(rows);
   const failed = rows.filter((r) => r.error);
   const withBalance = rows.filter((r) => !r.error && (rowAmount(r) ?? 0) !== 0);
   const totals = totalsByCurrency(withBalance);
-  const usd = (amount: number | undefined, currency: string) => amountInUsd(amount, currency, input.fx);
-  const fmtUsd = (amount: number | undefined) => (amount === undefined ? "—" : fmtMoney(amount, "USD"));
-  const totalUsd = withBalance.reduce((sum, r) => sum + (usd(rowAmount(r), r.currency) ?? 0), 0);
+  const totalUsd = withBalance.reduce((sum, r) => sum + (usdAmount(rowAmount(r), r.currency, input.fx) ?? 0), 0);
   const fxNote = input.fx?.date ? ` · FX ${esc(input.fx.date)} (ECB)` : "";
-  const pillParts = [`${rows.length} account${rows.length === 1 ? "" : "s"}`];
+  const pillParts = [`${groups.length} bank${groups.length === 1 ? "" : "s"}`, `${rows.length} account${rows.length === 1 ? "" : "s"}`];
   if (failed.length) pillParts.push(`${failed.length} failed`);
   const table = rows.length
-    ? `<table class="bal"><thead><tr><th class="logo"></th><th>Source</th><th>Account</th><th>Currency</th><th>Status</th><th class="num">Available</th><th class="num">USD equiv</th><th class="refresh"><form method="post" action="/balances/refresh-all"><button type="submit" class="refreshbtn refreshbtn-all" title="Refresh all balances">↻</button></form></th></tr></thead><tbody>${rows
-        .map((r) => {
-          const status = rowStatus(r);
-          const amount = rowAmount(r);
-          const cls = r.error ? " class=\"err\"" : "";
-          const available = r.error ? "—" : fmtMoney(amount, r.currency);
-          const usdEquiv = r.error ? "—" : fmtUsd(usd(amount, r.currency));
-          const logo = r.logo ? `<td class="logo"><img src="${esc(r.logo)}" alt="" width="24" height="24" loading="lazy"></td>` : `<td class="logo"></td>`;
-          const refresh = refreshable(r.uid)
-            ? `<td class="refresh"><form method="post" action="/balances/refresh"><input type="hidden" name="uid" value="${esc(r.uid)}"><button type="submit" class="refreshbtn" title="Fetch fresh balance">↻</button></form></td>`
-            : `<td class="refresh"></td>`;
-          return `<tr${cls}>${logo}<td>${esc(r.source)}</td><td>${esc(r.account)}</td><td>${esc(r.currency)}</td><td class="${status.cls} status-cell" title="${esc(status.detail)}">${esc(status.short)}</td><td class="num">${available}</td><td class="num">${usdEquiv}</td>${refresh}</tr>`;
-        })
+    ? `<table class="bal"><thead><tr><th class="logo"></th><th>Source</th><th>Account</th><th>Currency</th><th>Status</th><th class="num">Available</th><th class="num">USD equiv</th><th class="refresh"><form method="post" action="/balances/refresh-all"><button type="submit" class="refreshbtn refreshbtn-all" title="Refresh all balances">↻</button></form></th></tr></thead><tbody>${groups
+        .map((g) => renderGroupRow(g, input.fx))
         .join("")}</tbody>${totals.length ? `<tfoot>${totals
-        .map(([currency, amount]) => `<tr class="total"><td></td><td colspan="2">Total</td><td>${esc(currency)}</td><td></td><td class="num">${fmtMoney(amount, currency)}</td><td class="num">${fmtUsd(usd(amount, currency))}</td><td></td></tr>`)
-        .join("")}${input.fx ? `<tr class="total"><td></td><td colspan="2">Grand total</td><td>USD</td><td></td><td class="num">—</td><td class="num">${fmtMoney(totalUsd, "USD")}</td><td></td></tr>` : ""}</tfoot>` : ""}</table>`
+        .map(([currency, amount]) => `<tr class="total"><td></td><td colspan="2">Total</td><td>${esc(currency)}</td><td></td><td class="num">${fmtMoney(amount, currency)}</td><td class="num">${fmtUsdCell(usdAmount(amount, currency, input.fx))}</td><td></td></tr>`)
+        .join("")}${input.fx ? `<tr class="total"><td></td><td colspan="2">Grand total</td><td>USD</td><td></td><td class="num">—</td><td class="num">${fmtMoney(totalUsd, "USD")}</td><td></td></tr>` : ""}</tfoot>` : ""}</table>
+     <script>document.querySelectorAll(".expandbtn").forEach(function(btn){btn.addEventListener("click",function(){var id=btn.getAttribute("data-target");var open=btn.getAttribute("aria-expanded")==="true";document.querySelectorAll('tr[data-group="'+id+'"]').forEach(function(row){row.classList.toggle("hidden",open);});btn.setAttribute("aria-expanded",open?"false":"true");btn.textContent=open?"▶":"▼";btn.classList.toggle("open",!open);});});</script>`
     : `<p class="muted">No accounts linked yet.</p>`;
   return wideShell(
     "Balances",
@@ -327,7 +400,7 @@ export function balancesPage(input: { asOf: string; fetchedAt: string; rows: Bal
      <p class="actions" style="margin-top:0;margin-bottom:12px"><form method="post" action="/balances/fill-sheet" style="display:inline"><button type="submit" class="refreshbtn" style="width:auto;padding:8px 14px;font-size:14px">Fill balances sheet</button></form></p>
      <p class="muted">As of ${esc(fmtDate(input.asOf))} · fetched ${esc(new Date(input.fetchedAt).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }))}${fxNote}</p>
      ${table}
-     <p class="actions"><span class="muted">Balances are cached for the day · fresh pull daily at 19:00 Athens · hover status for details · bold ↻ refreshes all · row ↻ refreshes one</span></p>`,
+     <p class="actions"><span class="muted">Balances are cached for the day · fresh pull daily at 19:00 Athens · ▶ expands sub-accounts · bold ↻ refreshes all · row ↻ refreshes one</span></p>`,
     { kind: failed.length && !withBalance.length ? "error" : failed.length ? "neutral" : "ok", pill: pillParts.join(" · ") },
   );
 }
