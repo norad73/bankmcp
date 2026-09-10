@@ -1,10 +1,6 @@
-import { clearCachedBalance, getCachedBalance, seedBalanceCache, setCachedBalance, type SeedBalanceCacheInput, type SeedBalanceCacheResult } from "./balance-cache.ts";
-import { accountDisplayName, athensDate, sessionName } from "./data.ts";
+import { clearCachedBalance, seedBalanceCache, type SeedBalanceCacheInput, type SeedBalanceCacheResult } from "./balance-cache.ts";
+import { accountDisplayName, sessionName } from "./data.ts";
 import { store } from "./store.ts";
-
-export function emptySessionUid(sessionId: string): string {
-  return `session:${sessionId}:empty`;
-}
 
 export function sessionsForLabel(label: string) {
   const needle = label.trim().toLowerCase();
@@ -28,20 +24,8 @@ export function accountsForSessionLabel(label: string) {
 
 export function seedBalanceCacheForLabel(input: SeedBalanceCacheInput): SeedBalanceCacheResult[] {
   const accounts = accountsForSessionLabel(input.sessionLabel);
-  if (accounts.length) return seedBalanceCache(() => accounts, input);
-
-  const sessions = sessionsForLabel(input.sessionLabel);
-  const session = sessions[0]!;
-  const uid = emptySessionUid(session.id);
-  const date = input.date ?? athensDate();
-  const currency = input.currency ?? "EUR";
-  setCachedBalance(uid, {
-    date,
-    booked: input.booked ?? input.available,
-    available: input.available,
-    currency,
-  });
-  return [{ accountUid: uid, account: input.sessionLabel }];
+  if (!accounts.length) throw new Error(`No accounts found for "${input.sessionLabel}"`);
+  return seedBalanceCache(() => accounts, input);
 }
 
 export function clearBalanceCacheForLabel(label: string, account?: string, accountUid?: string): SeedBalanceCacheResult[] {
@@ -58,41 +42,4 @@ export function clearBalanceCacheForLabel(label: string, account?: string, accou
   const row = accounts[0]!;
   clearCachedBalance(row.uid);
   return [{ accountUid: row.uid, account: row.displayName }];
-}
-
-/** Move today's Eurobank IKE balance cache onto account 02 if it landed elsewhere. */
-export function fixEurobankIkeBalanceCache(amount = 9844.24): void {
-  const label = "Eurobank IKE";
-  try {
-    const accounts = accountsForSessionLabel(label);
-    const acct02 = accounts.find((a) => a.displayName.trim() === "02");
-    if (!acct02) return;
-
-    for (const account of accounts) {
-      if (account.uid === acct02.uid) continue;
-      const cached = getCachedBalance(account.uid);
-      if (cached && cached.available === amount) clearCachedBalance(account.uid);
-    }
-
-    if (getCachedBalance(acct02.uid)?.available !== amount) {
-      seedBalanceCacheForLabel({ sessionLabel: label, available: amount, booked: amount, currency: "EUR", account: "02" });
-      console.log(`[bank] cached ${amount} EUR on ${label} / 02`);
-    }
-  } catch (err) {
-    console.log(`[bank] Eurobank IKE cache fix skipped: ${(err as Error).message}`);
-  }
-}
-
-/** Seed today's balance for Eurobank USA Branch when the bank returns no account UIDs. */
-export function fixEurobankUsaBranchBalanceCache(amount = 1494.3): void {
-  const label = "Eurobank USA Branch";
-  try {
-    const uid = sessionsForLabel(label).map((session) => emptySessionUid(session.id))[0];
-    if (!uid) return;
-    if (getCachedBalance(uid)?.available === amount) return;
-    seedBalanceCacheForLabel({ sessionLabel: label, available: amount, booked: amount, currency: "EUR" });
-    console.log(`[bank] cached ${amount} EUR on ${label}`);
-  } catch (err) {
-    console.log(`[bank] Eurobank USA Branch cache fix skipped: ${(err as Error).message}`);
-  }
 }

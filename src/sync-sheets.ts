@@ -207,19 +207,8 @@ async function fetchEnableBankingBalances(date: string, opts: FetchBalanceOpts):
     }
 
     if (!accountUids.length) {
-      const emptyUid = `session:${session.id}:empty`;
-      const base: RowBase = { source: "enablebanking", bank, account: bank, currency: "EUR" };
-      const cached = getCachedBalance(emptyUid, date);
-      ebLog("fetch.noAccounts", { sessionId: session.id, label: bank, cached: !!cached });
-      if (!shouldFetch(emptyUid, date, opts) && cached) {
-        rows.push(rowFromCache(date, emptyUid, base, cached));
-        continue;
-      }
-      if (cached) {
-        rows.push(rowFromCache(date, emptyUid, base, cached));
-        continue;
-      }
-      rows.push({ date, ...base, uid: emptyUid, error: "No accounts returned by bank" });
+      ebLog("fetch.noAccounts", { sessionId: session.id, label: bank });
+      rows.push({ date, source: "enablebanking", bank, account: bank, uid: `session:${session.id}:empty`, currency: "EUR", error: "No accounts returned by bank" });
       continue;
     }
 
@@ -366,7 +355,7 @@ async function fetchMercuryBalances(date: string, opts: FetchBalanceOpts): Promi
   if (sourceUsesCacheOnly("mercury:", opts)) {
     const cached = cachedRowsForPrefix("mercury:", date, (uid, c) => {
       const id = uid.slice("mercury:".length);
-      return { source: "mercury", account: c.account ?? `Mercury · ${id.slice(0, 8)}`, currency: c.currency ?? "USD" };
+      return { source: "mercury", account: `Mercury · ${id.slice(0, 8)}`, currency: c.currency ?? "USD" };
     });
     if (cached.length) return cached;
   }

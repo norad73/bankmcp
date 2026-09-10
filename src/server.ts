@@ -4,15 +4,12 @@ import { createServer as createHttpServer } from "node:http";
 import { config, setupProblems, tlsOptions } from "./config.ts";
 import { createApp } from "./app.ts";
 import { applyKnownSessionLabels, purgeEbWiseWhenApiConfigured } from "./labels.ts";
-import { fixEurobankIkeBalanceCache, fixEurobankUsaBranchBalanceCache } from "./seed-cache.ts";
 import { ensureGoogleSheetsWebhook } from "./sheets-config.ts";
 import { setupAvailable } from "./setup.ts";
 
 applyKnownSessionLabels();
 purgeEbWiseWhenApiConfigured();
 ensureGoogleSheetsWebhook();
-fixEurobankIkeBalanceCache();
-fixEurobankUsaBranchBalanceCache();
 const app = createApp();
 const tls = tlsOptions();
 const httpServer = tls ? createHttpsServer(tls, app) : createHttpServer(app);
