@@ -1,5 +1,5 @@
 // BankConnector — shared helpers for Google Sheets scripts.
-// Script version: 0.4.23 (keep in sync with BankConnector app version)
+// Script version: 0.4.25 (keep in sync with BankConnector app version)
 
 function log_(message, detail) {
   var line = detail !== undefined ? message + " " + JSON.stringify(detail) : message;
@@ -58,10 +58,15 @@ function callBankConnector_(path, payload) {
   return parseBankConnectorResponse_(res.getContentText(), code);
 }
 
+/** Range from (startRow,startCol) through (endRow,endCol) inclusive. */
+function sheetRect_(sheet, startRow, startCol, endRow, endCol) {
+  return sheet.getRange(startRow, startCol, endRow - startRow + 1, endCol - startCol + 1);
+}
+
 function copyRowFormat_(sheet, fromRow, toRow) {
   var lastCol = sheet.getLastColumn();
-  sheet.getRange(fromRow, 1, fromRow, lastCol).copyTo(
-    sheet.getRange(toRow, 1, toRow, lastCol),
+  sheetRect_(sheet, fromRow, 1, fromRow, lastCol).copyTo(
+    sheetRect_(sheet, toRow, 1, toRow, lastCol),
     SpreadsheetApp.CopyPasteType.PASTE_FORMAT,
     false,
   );

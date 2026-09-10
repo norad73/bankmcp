@@ -1,5 +1,5 @@
 // BankConnector — append new rows on the "Mercury" transactions tab.
-// Script version: 0.4.24 (keep in sync with BankConnector app version)
+// Script version: 0.4.25 (keep in sync with BankConnector app version)
 // Paste with bankconnector-shared.gs and bankconnector-balances.gs in the same Apps Script project.
 
 var MERCURY_SHEET_NAME = "Mercury";
@@ -94,7 +94,7 @@ function mercuryMissingHeaders_(colMap) {
 function findLastMercuryDataRow_(sheet, descriptionCol) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return 1;
-  var values = sheet.getRange(2, descriptionCol, lastRow, descriptionCol).getValues();
+  var values = sheetRect_(sheet, 2, descriptionCol, lastRow, descriptionCol).getValues();
   for (var i = values.length - 1; i >= 0; i--) {
     if (String(values[i][0] || "").trim()) return i + 2;
   }
@@ -124,8 +124,8 @@ function copyMercuryRowFormats_(sheet, templateRow, startRow, count) {
   var lastCol = sheet.getLastColumn();
   copyRowFormat_(sheet, templateRow, startRow);
   if (count > 1) {
-    sheet.getRange(startRow, 1, startRow, lastCol).copyTo(
-      sheet.getRange(startRow + 1, 1, startRow + count - 1, lastCol),
+    sheetRect_(sheet, startRow, 1, startRow, lastCol).copyTo(
+      sheetRect_(sheet, startRow + 1, 1, startRow + count - 1, lastCol),
       SpreadsheetApp.CopyPasteType.PASTE_FORMAT,
       false,
     );
@@ -176,7 +176,7 @@ function writeMercuryColumn_(sheet, startRow, endRow, col, transactions, pick) {
     if (value === undefined || value === null || value === "") return [""];
     return [value];
   });
-  sheet.getRange(startRow, col, endRow, col).setValues(values);
+  sheetRect_(sheet, startRow, col, endRow, col).setValues(values);
 }
 
 function mercurySheetDate_(iso) {

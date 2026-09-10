@@ -1,5 +1,5 @@
 // BankConnector — fill the "Balances" and "CC" tabs from live bank data.
-// Script version: 0.4.23 (keep in sync with BankConnector app version)
+// Script version: 0.4.25 (keep in sync with BankConnector app version)
 //
 // Setup: paste ALL bankconnector-*.gs files from scripts/ into the spreadsheet Apps Script project:
 //   bankconnector-shared.gs, bankconnector-balances.gs, bankconnector-mercury.gs
@@ -46,20 +46,25 @@ function doGet() {
 
 function doPost(e) {
   log_("doPost started");
-  const body = e && e.postData ? JSON.parse(e.postData.contents) : {};
-  log_("doPost body", { action: body.action, source: body.source });
-  if (body.action === "fill") {
-    const result = fillSheetsImpl_(body);
-    log_("doPost done", { action: result.action, row: result.row, cc: result.cc });
-    return json(result);
+  try {
+    const body = e && e.postData ? JSON.parse(e.postData.contents) : {};
+    log_("doPost body", { action: body.action, source: body.source, count: (body.transactions || []).length });
+    if (body.action === "fill") {
+      const result = fillSheetsImpl_(body);
+      log_("doPost done", { action: result.action, row: result.row, cc: result.cc });
+      return json(result);
+    }
+    if (body.action === "fill-mercury") {
+      const result = fillMercuryTransactionsImpl_(body);
+      log_("doPost done", result);
+      return json(result);
+    }
+    log_("doPost unknown action", body.action);
+    return json({ ok: false, error: "Unknown action. Use { action: 'fill' } or { action: 'fill-mercury' }." });
+  } catch (err) {
+    log_("doPost failed", { error: String(err.message || err) });
+    return json({ ok: false, error: String(err.message || err) });
   }
-  if (body.action === "fill-mercury") {
-    const result = fillMercuryTransactionsImpl_(body);
-    log_("doPost done", result);
-    return json(result);
-  }
-  log_("doPost unknown action", body.action);
-  return json({ ok: false, error: "Unknown action. Use { action: 'fill' } or { action: 'fill-mercury' }." });
 }
 
 function fillBalancesSheet() {
