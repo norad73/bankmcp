@@ -1,5 +1,5 @@
 // BankConnector — append new rows on the "Mercury" transactions tab.
-// Script version: 0.4.25 (keep in sync with BankConnector app version)
+// Script version: 0.4.26 (keep in sync with BankConnector app version)
 // Paste with bankconnector-shared.gs and bankconnector-balances.gs in the same Apps Script project.
 
 var MERCURY_SHEET_NAME = "Mercury";
@@ -48,7 +48,7 @@ function fillMercuryTransactionsImpl_(body) {
   var missing = mercuryMissingHeaders_(colMap);
   if (missing.length) throw new Error("Mercury tab missing yellow headers: " + missing.join(", "));
 
-  var startRow = findLastMercuryDataRow_(sheet, colMap.description) + 1;
+  var startRow = findMercuryAppendRow_(sheet, colMap);
   var templateRow = startRow > 2 ? startRow - 1 : startRow;
   var added = transactions.length;
 
@@ -91,20 +91,31 @@ function mercuryMissingHeaders_(colMap) {
   return missing;
 }
 
-function findLastMercuryDataRow_(sheet, descriptionCol) {
+function mercuryCellHasValue_(value) {
+  if (value instanceof Date) return !isNaN(value.getTime());
+  return String(value || "").trim() !== "";
+}
+
+function findLastMercuryDataRow_(sheet, col) {
+  if (!col) return 1;
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return 1;
-  var values = sheetRect_(sheet, 2, descriptionCol, lastRow, descriptionCol).getValues();
+  var values = sheetRect_(sheet, 2, col, lastRow, col).getValues();
   for (var i = values.length - 1; i >= 0; i--) {
-    if (String(values[i][0] || "").trim()) return i + 2;
+    if (mercuryCellHasValue_(values[i][0])) return i + 2;
   }
   return 1;
+}
+
+function findMercuryAppendRow_(sheet, colMap) {
+  if (!colMap.dateUtc) throw new Error('Mercury tab missing "Date (UTC)" header');
+  return findLastMercuryDataRow_(sheet, colMap.dateUtc) + 1;
 }
 
 function findMercurySinceMs_(sheet) {
   var colMap = findMercuryColumnMap_(sheet);
   if (!colMap.dateUtc) return 0;
-  var lastRow = findLastMercuryDataRow_(sheet, colMap.description || colMap.dateUtc);
+  var lastRow = findLastMercuryDataRow_(sheet, colMap.dateUtc);
   if (lastRow < 2) return 0;
   var value = sheet.getRange(lastRow, colMap.dateUtc).getValue();
   return mercuryDateToMs_(value);
