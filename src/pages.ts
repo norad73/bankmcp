@@ -188,6 +188,7 @@ table.bal th,table.bal td{padding:10px 8px;border-bottom:1px solid var(--line);t
 table.bal th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600}
 table.bal td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 table.bal th.logo,table.bal td.logo{width:36px;padding-right:4px;text-align:center}
+table.bal th.expand,table.bal td.expand{width:32px;padding-left:4px;padding-right:0;text-align:center}
 table.bal td.logo img{width:24px;height:24px;border-radius:6px;object-fit:contain;background:var(--bg);vertical-align:middle;display:block}
 table.bal tr.err td{color:var(--err)}
 table.bal .status-ok{color:var(--ok);font-weight:600}
@@ -202,9 +203,9 @@ table.bal .refreshbtn:hover{background:var(--bg);opacity:1}
 table.bal .status-cell{cursor:help;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 table.bal tr.group-row td.source{font-weight:600}
 table.bal tr.sub-row.hidden{display:none}
-table.bal tr.sub-row td.account.sub{padding-left:28px;color:var(--muted);font-size:13px}
-table.bal .expandbtn{cursor:pointer;border:none;background:transparent;padding:0 4px 0 0;font:inherit;color:var(--muted);line-height:1}
-table.bal .expandbtn.open{color:var(--ink)}
+table.bal tr.sub-row td.account.sub{padding-left:12px;color:var(--muted);font-size:13px}
+table.bal .expandbtn{cursor:pointer;border:1px solid var(--line);background:transparent;padding:0 5px;font:inherit;font-size:12px;font-weight:700;color:var(--muted);line-height:1.4;border-radius:6px;min-width:24px}
+table.bal .expandbtn.open{color:var(--ink);border-color:var(--ink)}
 .actions{margin-top:16px}
 .actions .muted{font-size:14px;color:var(--muted)}
 </style>`,
@@ -318,6 +319,11 @@ function groupStatus(accounts: BalanceDisplayRow[]): { short: string; detail: st
   return { short: "Mixed", detail: "Some cached, some live", cls: "status-muted" };
 }
 
+function expandCell(id?: string): string {
+  if (!id) return `<td class="expand"></td>`;
+  return `<td class="expand"><button type="button" class="expandbtn" data-target="${esc(id)}" aria-expanded="false" title="Show accounts">[+]</button></td>`;
+}
+
 function renderBalanceRow(r: BalanceDisplayRow, fx: FxRates | undefined, opts: { sub?: boolean } = {}): string {
   const status = rowStatus(r);
   const amount = rowAmount(r);
@@ -326,17 +332,18 @@ function renderBalanceRow(r: BalanceDisplayRow, fx: FxRates | undefined, opts: {
   const dataAttr = opts.sub ? ` data-group="${esc(groupId(r.source))}"` : "";
   const available = r.error ? "—" : fmtMoney(amount, r.currency);
   const usdEquiv = r.error ? "—" : fmtUsdCell(usdAmount(amount, r.currency, fx));
+  const expand = expandCell();
   const logo = opts.sub
     ? `<td class="logo"></td>`
     : r.logo
       ? `<td class="logo"><img src="${esc(r.logo)}" alt="" width="24" height="24" loading="lazy"></td>`
       : `<td class="logo"></td>`;
-  const source = opts.sub ? `<td></td>` : `<td>${esc(r.source)}</td>`;
+  const source = opts.sub ? `<td></td>` : `<td class="source">${esc(r.source)}</td>`;
   const account = opts.sub ? `<td class="account sub">${esc(r.account)}</td>` : `<td>${esc(r.account)}</td>`;
   const refresh = refreshable(r.uid)
     ? `<td class="refresh"><form method="post" action="/balances/refresh"><input type="hidden" name="uid" value="${esc(r.uid)}"><button type="submit" class="refreshbtn" title="Fetch fresh balance">↻</button></form></td>`
     : `<td class="refresh"></td>`;
-  return `<tr${classAttr}${dataAttr}>${logo}${source}${account}<td>${esc(r.currency)}</td><td class="${status.cls} status-cell" title="${esc(status.detail)}">${esc(status.short)}</td><td class="num">${available}</td><td class="num">${usdEquiv}</td>${refresh}</tr>`;
+  return `<tr${classAttr}${dataAttr}>${expand}${logo}${source}${account}<td>${esc(r.currency)}</td><td class="${status.cls} status-cell" title="${esc(status.detail)}">${esc(status.short)}</td><td class="num">${available}</td><td class="num">${usdEquiv}</td>${refresh}</tr>`;
 }
 
 function renderGroupRow(group: ReturnType<typeof groupBalanceRows>[number], fx: FxRates | undefined): string {
@@ -356,7 +363,7 @@ function renderGroupRow(group: ReturnType<typeof groupBalanceRows>[number], fx: 
   const logoCell = logo
     ? `<td class="logo"><img src="${esc(logo)}" alt="" width="24" height="24" loading="lazy"></td>`
     : `<td class="logo"></td>`;
-  const header = `<tr class="group-row">${logoCell}<td class="source"><button type="button" class="expandbtn" data-target="${esc(id)}" aria-expanded="false" title="Show accounts">▶</button> ${esc(source)}</td><td>${esc(accountLabel)}</td><td>${esc(currency)}</td><td class="${status.cls} status-cell" title="${esc(status.detail)}">${esc(status.short)}</td><td class="num">${available}</td><td class="num">${usdEquiv}</td><td class="refresh"></td></tr>`;
+  const header = `<tr class="group-row">${expandCell(id)}${logoCell}<td class="source">${esc(source)}</td><td>${esc(accountLabel)}</td><td>${esc(currency)}</td><td class="${status.cls} status-cell" title="${esc(status.detail)}">${esc(status.short)}</td><td class="num">${available}</td><td class="num">${usdEquiv}</td><td class="refresh"></td></tr>`;
   const subs = accounts.map((a) => renderBalanceRow(a, fx, { sub: true })).join("");
   return header + subs;
 }
@@ -386,12 +393,12 @@ export function balancesPage(input: { asOf: string; fetchedAt: string; rows: Bal
   const pillParts = [`${groups.length} bank${groups.length === 1 ? "" : "s"}`, `${rows.length} account${rows.length === 1 ? "" : "s"}`];
   if (failed.length) pillParts.push(`${failed.length} failed`);
   const table = rows.length
-    ? `<table class="bal"><thead><tr><th class="logo"></th><th>Source</th><th>Account</th><th>Currency</th><th>Status</th><th class="num">Available</th><th class="num">USD equiv</th><th class="refresh"><form method="post" action="/balances/refresh-all"><button type="submit" class="refreshbtn refreshbtn-all" title="Refresh all balances">↻</button></form></th></tr></thead><tbody>${groups
+    ? `<table class="bal"><thead><tr><th class="expand"></th><th class="logo"></th><th>Source</th><th>Account</th><th>Currency</th><th>Status</th><th class="num">Available</th><th class="num">USD equiv</th><th class="refresh"><form method="post" action="/balances/refresh-all"><button type="submit" class="refreshbtn refreshbtn-all" title="Refresh all balances">↻</button></form></th></tr></thead><tbody>${groups
         .map((g) => renderGroupRow(g, input.fx))
         .join("")}</tbody>${totals.length ? `<tfoot>${totals
-        .map(([currency, amount]) => `<tr class="total"><td></td><td colspan="2">Total</td><td>${esc(currency)}</td><td></td><td class="num">${fmtMoney(amount, currency)}</td><td class="num">${fmtUsdCell(usdAmount(amount, currency, input.fx))}</td><td></td></tr>`)
-        .join("")}${input.fx ? `<tr class="total"><td></td><td colspan="2">Grand total</td><td>USD</td><td></td><td class="num">—</td><td class="num">${fmtMoney(totalUsd, "USD")}</td><td></td></tr>` : ""}</tfoot>` : ""}</table>
-     <script>document.querySelectorAll(".expandbtn").forEach(function(btn){btn.addEventListener("click",function(){var id=btn.getAttribute("data-target");var open=btn.getAttribute("aria-expanded")==="true";document.querySelectorAll('tr[data-group="'+id+'"]').forEach(function(row){row.classList.toggle("hidden",open);});btn.setAttribute("aria-expanded",open?"false":"true");btn.textContent=open?"▶":"▼";btn.classList.toggle("open",!open);});});</script>`
+        .map(([currency, amount]) => `<tr class="total"><td></td><td></td><td colspan="2">Total</td><td>${esc(currency)}</td><td></td><td class="num">${fmtMoney(amount, currency)}</td><td class="num">${fmtUsdCell(usdAmount(amount, currency, input.fx))}</td><td></td></tr>`)
+        .join("")}${input.fx ? `<tr class="total"><td></td><td></td><td colspan="2">Grand total</td><td>USD</td><td></td><td class="num">—</td><td class="num">${fmtMoney(totalUsd, "USD")}</td><td></td></tr>` : ""}</tfoot>` : ""}</table>
+     <script>document.querySelectorAll(".expandbtn").forEach(function(btn){btn.addEventListener("click",function(){var id=btn.getAttribute("data-target");var open=btn.getAttribute("aria-expanded")==="true";document.querySelectorAll('tr[data-group="'+id+'"]').forEach(function(row){row.classList.toggle("hidden",open);});btn.setAttribute("aria-expanded",open?"false":"true");btn.textContent=open?"[+]":"[−]";btn.classList.toggle("open",!open);});});</script>`
     : `<p class="muted">No accounts linked yet.</p>`;
   return wideShell(
     "Balances",
@@ -400,7 +407,7 @@ export function balancesPage(input: { asOf: string; fetchedAt: string; rows: Bal
      <p class="actions" style="margin-top:0;margin-bottom:12px"><form method="post" action="/balances/fill-sheet" style="display:inline"><button type="submit" class="refreshbtn" style="width:auto;padding:8px 14px;font-size:14px">Fill balances sheet</button></form></p>
      <p class="muted">As of ${esc(fmtDate(input.asOf))} · fetched ${esc(new Date(input.fetchedAt).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }))}${fxNote}</p>
      ${table}
-     <p class="actions"><span class="muted">Balances are cached for the day · fresh pull daily at 19:00 Athens · ▶ expands sub-accounts · bold ↻ refreshes all · row ↻ refreshes one</span></p>`,
+     <p class="actions"><span class="muted">Balances are cached for the day · fresh pull daily at 19:00 Athens · [+] expands sub-accounts · bold ↻ refreshes all · row ↻ refreshes one</span></p>`,
     { kind: failed.length && !withBalance.length ? "error" : failed.length ? "neutral" : "ok", pill: pillParts.join(" · ") },
   );
 }
