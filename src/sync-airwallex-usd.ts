@@ -124,11 +124,15 @@ export function filterNewAirwallexUsdRows(
 ): AirwallexUsdSheetRow[] {
   const skipped = rows.filter((row) => !affectsAirwallexAccountBalance(row)).map((row) => row.transactionId);
   if (skipped.length) rememberAirwallexTransactionIds(skipped);
-  return rows
-    .filter(affectsAirwallexAccountBalance)
-    .filter((row) => !known.has(row.transactionId))
-    .filter((row) => sinceMs <= 0 || rowTimeMs(row) > sinceMs)
-    .sort((a, b) => rowTimeMs(a) - rowTimeMs(b));
+  // Keep BAR CSV order — Account Balance is a running total in report sequence.
+  const out: AirwallexUsdSheetRow[] = [];
+  for (const row of rows) {
+    if (!affectsAirwallexAccountBalance(row)) continue;
+    if (known.has(row.transactionId)) continue;
+    if (sinceMs > 0 && rowTimeMs(row) <= sinceMs) continue;
+    out.push(row);
+  }
+  return out;
 }
 
 function airwallexKnownIds(sheetTransactionIds?: string[]): Set<string> {

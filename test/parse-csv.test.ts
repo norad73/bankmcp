@@ -63,3 +63,31 @@ test("filterNewAirwallexUsdRows skips only ids still on the sheet", () => {
   const filtered = filterNewAirwallexUsdRows(rows, new Set(["keep-me"]), 0);
   assert.deepEqual(filtered.map((r) => r.transactionId), ["re-add-me"]);
 });
+
+test("filterNewAirwallexUsdRows preserves BAR row order for same-day transactions", () => {
+  const row = (id: string, accountBalance: number): AirwallexUsdSheetRow => ({
+    transactionId: id,
+    time: "2026-09-01T12:00:00-0700",
+    type: "CARD",
+    financialTransactionType: "CARD_PURCHASE",
+    description: "",
+    walletCurrency: "USD",
+    targetCurrency: "",
+    targetAmount: "",
+    conversionRate: "",
+    matureDate: "",
+    amount: 10,
+    fee: "",
+    debitNetAmount: 10,
+    creditNetAmount: "",
+    availableBalance: 100,
+    accountBalance,
+    createdAt: "2026-09-01T12:00:00-0700",
+    requestId: "",
+    reference: "",
+    noteToSelf: "",
+  });
+  const rows = [row("first-in-report", 100), row("second-in-report", 90)];
+  const filtered = filterNewAirwallexUsdRows(rows, new Set(), 0);
+  assert.deepEqual(filtered.map((r) => r.transactionId), ["first-in-report", "second-in-report"]);
+});
