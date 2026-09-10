@@ -6,6 +6,22 @@ import type { AirwallexUsdSheetRow } from "./sheet-airwallex-usd.ts";
 
 export type { AirwallexUsdSheetRow };
 
+/** Available-balance holds/releases — do not post to Account balance (BAR v1.2). */
+const AIRWALLEX_RESERVATION_TYPES = new Set([
+  "CARD_AUTHORISATION",
+  "CARD_AUTHORISATION_RELEASE",
+  "PAYIN_REFUND_HOLD",
+  "PAYIN_REFUND_RELEASE",
+  "PAYMENT_RESERVE_HOLD",
+  "PAYMENT_RESERVE_RELEASE",
+]);
+
+export function affectsAirwallexAccountBalance(row: Pick<AirwallexUsdSheetRow, "financialTransactionType">): boolean {
+  const type = row.financialTransactionType.trim().toUpperCase();
+  if (!type) return true;
+  return !AIRWALLEX_RESERVATION_TYPES.has(type);
+}
+
 const BAR_HEADERS = [
   "Time",
   "Type",
@@ -112,8 +128,11 @@ export async function fetchNewAirwallexUsdTransactions(sinceMs = 0): Promise<Air
     timeoutMs: 180_000,
   });
   const known = loadAirwallexTransactionIds();
-  return parseBalanceActivityCsv(csv)
-    .filter((row) => row.walletCurrency.toUpperCase() === "USD")
+  const parsed = parseBalanceActivityCsv(csv).filter((row) => row.walletCurrency.toUpperCase() === "USD");
+  const skipped = parsed.filter((row) => !affectsAirwallexAccountBalance(row)).map((row) => row.transactionId);
+  if (skipped.length) rememberAirwallexTransactionIds(skipped);
+  return parsed
+    .filter(affectsAirwallexAccountBalance)
     .filter((row) => !known.has(row.transactionId))
     .filter((row) => sinceMs <= 0 || rowTimeMs(row) > sinceMs)
     .sort((a, b) => rowTimeMs(a) - rowTimeMs(b));

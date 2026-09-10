@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parseCsv } from "../src/parse-csv.ts";
-import { parseBalanceActivityCsv } from "../src/sync-airwallex-usd.ts";
+import { affectsAirwallexAccountBalance, parseBalanceActivityCsv } from "../src/sync-airwallex-usd.ts";
 
 test("parseCsv handles quoted commas", () => {
   const rows = parseCsv('a,"b,c",d\n1,2,3');
@@ -22,4 +22,11 @@ test("parseBalanceActivityCsv maps BAR columns to sheet row", () => {
   assert.equal(rows[0]?.description, "SHOP, GRC");
   assert.equal(rows[0]?.availableBalance, 6258.43);
   assert.equal(rows[0]?.accountBalance, 6470.11);
+});
+
+test("affectsAirwallexAccountBalance excludes reservation holds and releases", () => {
+  assert.equal(affectsAirwallexAccountBalance({ financialTransactionType: "CARD_PURCHASE" }), true);
+  assert.equal(affectsAirwallexAccountBalance({ financialTransactionType: "CARD_AUTHORISATION" }), false);
+  assert.equal(affectsAirwallexAccountBalance({ financialTransactionType: "CARD_AUTHORISATION_RELEASE" }), false);
+  assert.equal(affectsAirwallexAccountBalance({ financialTransactionType: "PAYMENT_RESERVE_HOLD" }), false);
 });

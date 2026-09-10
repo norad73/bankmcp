@@ -192,7 +192,7 @@ export async function createBalanceActivityReport(opts: {
     to_created_at: opts.toDate,
     time_zone: opts.timeZone ?? "UTC",
     report_version: "1.2.0",
-    report_options: { include_reservations: true },
+    report_options: { include_reservations: false },
   })) as AirwallexFinancialReport;
   if (!data.id) throw new AirwallexError(500, "Report create returned no id");
   return data;
