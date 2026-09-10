@@ -1,5 +1,5 @@
 // BankConnector — shared helpers for Google Sheets scripts.
-// Script version: 0.4.31 (keep in sync with BankConnector app version)
+// Script version: 0.4.32 (keep in sync with BankConnector app version)
 
 function log_(message, detail) {
   var line = detail !== undefined ? message + " " + JSON.stringify(detail) : message;
@@ -22,21 +22,20 @@ function bankConnectorProps_() {
 }
 
 function parseBankConnectorResponse_(text, code) {
+  var data;
   try {
-    var data = JSON.parse(text);
-    if (code >= 400) throw new Error(data.error || text.slice(0, 200));
-    if (data.action) return data;
-    if (data.ok === false) throw new Error(data.error || "BankConnector request failed");
-    return data;
-  } catch (err) {
-    if (err.message && err.message.indexOf("BankConnector") === 0) throw err;
-    if (err.message && err.message.indexOf("Set Script") === 0) throw err;
+    data = JSON.parse(text);
+  } catch (parseErr) {
     throw new Error(
       "BankConnector returned non-JSON (HTTP " + code + "). "
       + "Check BANKCONNECTOR_URL and CRON_SECRET in Script properties. "
       + "Response starts with: " + String(text).slice(0, 80),
     );
   }
+  if (code >= 400) throw new Error(data.error || text.slice(0, 200));
+  if (data.action) return data;
+  if (data.ok === false) throw new Error(data.error || "BankConnector request failed");
+  return data;
 }
 
 function callBankConnector_(path, payload) {

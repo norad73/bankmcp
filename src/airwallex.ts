@@ -84,13 +84,13 @@ async function getAccessToken(): Promise<string> {
   return data.token;
 }
 
-async function authHeaders(contentType?: string): Promise<Record<string, string>> {
+async function authHeaders(opts?: { contentType?: string; accept?: string }): Promise<Record<string, string>> {
   const token = await getAccessToken();
   const headers: Record<string, string> = {
-    Accept: "application/json",
+    Accept: opts?.accept ?? "application/json",
     Authorization: `Bearer ${token}`,
   };
-  if (contentType) headers["Content-Type"] = contentType;
+  if (opts?.contentType) headers["Content-Type"] = opts.contentType;
   if (config.airwallexAccountId) headers["x-login-as"] = config.airwallexAccountId;
   return headers;
 }
@@ -102,8 +102,8 @@ async function airwallexGet(path: string): Promise<unknown> {
   return text ? JSON.parse(text) : {};
 }
 
-async function airwallexGetText(path: string): Promise<string> {
-  const res = await fetch(`${config.airwallexApiBase}${path}`, { headers: await authHeaders() });
+async function airwallexGetText(path: string, accept = "*/*"): Promise<string> {
+  const res = await fetch(`${config.airwallexApiBase}${path}`, { headers: await authHeaders({ accept }) });
   const text = await res.text();
   if (!res.ok) throw new AirwallexError(res.status, text);
   return text;
@@ -112,7 +112,7 @@ async function airwallexGetText(path: string): Promise<string> {
 async function airwallexPost(path: string, body: unknown): Promise<unknown> {
   const res = await fetch(`${config.airwallexApiBase}${path}`, {
     method: "POST",
-    headers: await authHeaders("application/json"),
+    headers: await authHeaders({ contentType: "application/json" }),
     body: JSON.stringify(body),
   });
   const text = await res.text();
@@ -190,7 +190,7 @@ export async function createBalanceActivityReport(opts: {
     currencies: [opts.currency],
     from_created_at: opts.fromDate,
     to_created_at: opts.toDate,
-    time_zone: opts.timeZone ?? "",
+    time_zone: opts.timeZone ?? "UTC",
     report_version: "1.2.0",
     report_options: { include_reservations: true },
   })) as AirwallexFinancialReport;
@@ -203,7 +203,8 @@ export async function getFinancialReport(id: string): Promise<AirwallexFinancial
 }
 
 export async function downloadFinancialReportContent(id: string): Promise<string> {
-  return airwallexGetText(`/api/v1/finance/financial_reports/${encodeURIComponent(id)}/content`);
+  // CSV reports return text/plain; Accept: application/json yields 406.
+  return airwallexGetText(`/api/v1/finance/financial_reports/${encodeURIComponent(id)}/content`, "text/plain, */*");
 }
 
 function sleep(ms: number): Promise<void> {
