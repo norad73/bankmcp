@@ -1,5 +1,5 @@
 // BankConnector — append new rows on the "Mercury" transactions tab.
-// Script version: 0.4.23 (keep in sync with BankConnector app version)
+// Script version: 0.4.24 (keep in sync with BankConnector app version)
 // Paste with bankconnector-shared.gs and bankconnector-balances.gs in the same Apps Script project.
 
 var MERCURY_SHEET_NAME = "Mercury";
@@ -50,14 +50,10 @@ function fillMercuryTransactionsImpl_(body) {
 
   var startRow = findLastMercuryDataRow_(sheet, colMap.description) + 1;
   var templateRow = startRow > 2 ? startRow - 1 : startRow;
-  var added = 0;
+  var added = transactions.length;
 
-  transactions.forEach(function (tx, index) {
-    var row = startRow + index;
-    if (index > 0 || row > templateRow) copyRowFormat_(sheet, templateRow, row);
-    writeMercuryRow_(sheet, row, colMap, tx);
-    added++;
-  });
+  copyMercuryRowFormats_(sheet, templateRow, startRow, added);
+  writeMercuryRows_(sheet, startRow, colMap, transactions);
 
   log_("fillMercuryTransactionsImpl done", { added: added, startRow: startRow });
   return { ok: true, action: "appended", added: added, startRow: startRow, endRow: startRow + added - 1 };
@@ -123,18 +119,64 @@ function mercuryDateToMs_(value) {
   return 0;
 }
 
-function writeMercuryRow_(sheet, row, colMap, tx) {
-  setMercuryCell_(sheet, row, colMap.dateUtc, mercurySheetDate_(tx.dateUtc));
-  setMercuryCell_(sheet, row, colMap.description, tx.description);
-  setMercuryCell_(sheet, row, colMap.amount, tx.amount);
-  setMercuryCell_(sheet, row, colMap.status, tx.status);
-  setMercuryCell_(sheet, row, colMap.sourceAccount, tx.sourceAccount);
-  setMercuryCell_(sheet, row, colMap.bankDescription, tx.bankDescription);
-  setMercuryCell_(sheet, row, colMap.reference, tx.reference);
-  setMercuryCell_(sheet, row, colMap.note, tx.note);
-  setMercuryCell_(sheet, row, colMap.nameOnCard, tx.nameOnCard);
-  setMercuryCell_(sheet, row, colMap.category, tx.category);
-  setMercuryCell_(sheet, row, colMap.glCode, tx.glCode);
+function copyMercuryRowFormats_(sheet, templateRow, startRow, count) {
+  if (count <= 0 || startRow <= templateRow) return;
+  var lastCol = sheet.getLastColumn();
+  copyRowFormat_(sheet, templateRow, startRow);
+  if (count > 1) {
+    sheet.getRange(startRow, 1, startRow, lastCol).copyTo(
+      sheet.getRange(startRow + 1, 1, startRow + count - 1, lastCol),
+      SpreadsheetApp.CopyPasteType.PASTE_FORMAT,
+      false,
+    );
+  }
+}
+
+function writeMercuryRows_(sheet, startRow, colMap, transactions) {
+  var endRow = startRow + transactions.length - 1;
+  writeMercuryColumn_(sheet, startRow, endRow, colMap.dateUtc, transactions, function (tx) {
+    return mercurySheetDate_(tx.dateUtc);
+  });
+  writeMercuryColumn_(sheet, startRow, endRow, colMap.description, transactions, function (tx) {
+    return tx.description;
+  });
+  writeMercuryColumn_(sheet, startRow, endRow, colMap.amount, transactions, function (tx) {
+    return tx.amount;
+  });
+  writeMercuryColumn_(sheet, startRow, endRow, colMap.status, transactions, function (tx) {
+    return tx.status;
+  });
+  writeMercuryColumn_(sheet, startRow, endRow, colMap.sourceAccount, transactions, function (tx) {
+    return tx.sourceAccount;
+  });
+  writeMercuryColumn_(sheet, startRow, endRow, colMap.bankDescription, transactions, function (tx) {
+    return tx.bankDescription;
+  });
+  writeMercuryColumn_(sheet, startRow, endRow, colMap.reference, transactions, function (tx) {
+    return tx.reference;
+  });
+  writeMercuryColumn_(sheet, startRow, endRow, colMap.note, transactions, function (tx) {
+    return tx.note;
+  });
+  writeMercuryColumn_(sheet, startRow, endRow, colMap.nameOnCard, transactions, function (tx) {
+    return tx.nameOnCard;
+  });
+  writeMercuryColumn_(sheet, startRow, endRow, colMap.category, transactions, function (tx) {
+    return tx.category;
+  });
+  writeMercuryColumn_(sheet, startRow, endRow, colMap.glCode, transactions, function (tx) {
+    return tx.glCode;
+  });
+}
+
+function writeMercuryColumn_(sheet, startRow, endRow, col, transactions, pick) {
+  if (!col) return;
+  var values = transactions.map(function (tx) {
+    var value = pick(tx);
+    if (value === undefined || value === null || value === "") return [""];
+    return [value];
+  });
+  sheet.getRange(startRow, col, endRow, col).setValues(values);
 }
 
 function mercurySheetDate_(iso) {
@@ -143,8 +185,3 @@ function mercurySheetDate_(iso) {
   return String(iso || "");
 }
 
-function setMercuryCell_(sheet, row, col, value) {
-  if (!col) return;
-  if (value === undefined || value === null || value === "") return;
-  sheet.getRange(row, col).setValue(value);
-}

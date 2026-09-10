@@ -23,8 +23,13 @@ function readStore(): MercurySyncStore {
   }
 }
 
-export function hasMercuryTransactionId(id: string): boolean {
-  return readStore().transactionIds.includes(id);
+/** Load all known Mercury transaction ids once (O(1) lookups via Set). */
+export function loadMercuryTransactionIds(): Set<string> {
+  return new Set(readStore().transactionIds);
+}
+
+export function hasMercuryTransactionId(id: string, known?: Set<string>): boolean {
+  return (known ?? loadMercuryTransactionIds()).has(id);
 }
 
 export function rememberMercuryTransactionIds(ids: string[]): void {

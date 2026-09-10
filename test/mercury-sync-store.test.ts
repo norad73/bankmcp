@@ -9,11 +9,13 @@ test("mercury sync store remembers transaction ids", async () => {
   const prev = process.env.DATA_DIR;
   process.env.DATA_DIR = dir;
   try {
-    const { hasMercuryTransactionId, rememberMercuryTransactionIds } = await import("../src/mercury-sync-store.ts");
-    assert.equal(hasMercuryTransactionId("abc"), false);
+    const { hasMercuryTransactionId, loadMercuryTransactionIds, rememberMercuryTransactionIds } = await import("../src/mercury-sync-store.ts");
+    const known = loadMercuryTransactionIds();
+    assert.equal(hasMercuryTransactionId("abc", known), false);
     rememberMercuryTransactionIds(["abc", "def"]);
-    assert.equal(hasMercuryTransactionId("abc"), true);
-    assert.equal(hasMercuryTransactionId("xyz"), false);
+    const updated = loadMercuryTransactionIds();
+    assert.equal(hasMercuryTransactionId("abc", updated), true);
+    assert.equal(hasMercuryTransactionId("xyz", updated), false);
   } finally {
     if (prev) process.env.DATA_DIR = prev;
     else delete process.env.DATA_DIR;

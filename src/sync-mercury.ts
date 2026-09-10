@@ -9,7 +9,7 @@ import {
   type MercuryAccount,
   type MercuryTransaction,
 } from "./mercury.ts";
-import { hasMercuryTransactionId, rememberMercuryTransactionIds } from "./mercury-sync-store.ts";
+import { loadMercuryTransactionIds, rememberMercuryTransactionIds } from "./mercury-sync-store.ts";
 import type { MercurySheetTransaction } from "./sheet-mercury.ts";
 
 export type { MercurySheetTransaction };
@@ -38,23 +38,14 @@ function reference(tx: MercuryTransaction): string {
   return tx.externalMemo?.trim() || tx.trackingNumber?.trim() || "";
 }
 
-async function mapTransaction(
+function mapTransaction(
   tx: MercuryTransaction,
   accounts: Map<string, MercuryAccount>,
   cardNames: Map<string, string>,
-): Promise<MercurySheetTransaction> {
+): MercurySheetTransaction {
   const account = accounts.get(tx.accountId);
   const sourceAccount = account ? formatMercurySourceAccount(account) : "Mercury";
-  let nameOnCard = "";
-  if (tx.cardId) {
-    if (cardNames.has(tx.cardId)) {
-      nameOnCard = cardNames.get(tx.cardId) ?? "";
-    } else {
-      const card = await getMercuryCard(tx.cardId);
-      nameOnCard = card?.nameOnCard?.trim() ?? "";
-      cardNames.set(tx.cardId, nameOnCard);
-    }
-  }
+  const nameOnCard = tx.cardId ? (cardNames.get(tx.cardId) ?? "") : "";
   const instant = tx.postedAt ?? tx.createdAt;
   return {
     id: tx.id,
@@ -72,19 +63,30 @@ async function mapTransaction(
   };
 }
 
+async function loadMercuryCardNames(cardIds: string[]): Promise<Map<string, string>> {
+  const cardNames = new Map<string, string>();
+  await Promise.all(
+    cardIds.map(async (cardId) => {
+      const card = await getMercuryCard(cardId);
+      cardNames.set(cardId, card?.nameOnCard?.trim() ?? "");
+    }),
+  );
+  return cardNames;
+}
+
 export async function fetchNewMercuryTransactions(sinceMs = 0): Promise<MercurySheetTransaction[]> {
   if (!isMercuryConfigured()) return [];
   const postedStart = sinceMs > 0 ? new Date(sinceMs).toISOString().slice(0, 10) : undefined;
-  const [accounts, raw] = await Promise.all([listMercuryAccounts(), listMercuryTransactions({ postedStart, order: "asc" })]);
+  const [accounts, raw, known] = await Promise.all([
+    listMercuryAccounts(),
+    listMercuryTransactions({ postedStart, order: "asc" }),
+    Promise.resolve(loadMercuryTransactionIds()),
+  ]);
   const accountMap = new Map(accounts.map((a) => [a.id, a]));
-  const cardNames = new Map<string, string>();
-  const out: MercurySheetTransaction[] = [];
-  for (const tx of raw) {
-    if (hasMercuryTransactionId(tx.id)) continue;
-    if (sinceMs > 0 && txInstant(tx) <= sinceMs) continue;
-    out.push(await mapTransaction(tx, accountMap, cardNames));
-  }
-  return out;
+  const pending = raw.filter((tx) => !known.has(tx.id) && (sinceMs <= 0 || txInstant(tx) > sinceMs));
+  const cardIds = [...new Set(pending.map((tx) => tx.cardId).filter((id): id is string => Boolean(id)))];
+  const cardNames = await loadMercuryCardNames(cardIds);
+  return pending.map((tx) => mapTransaction(tx, accountMap, cardNames));
 }
 
 export async function syncMercuryTransactionsToSheet(sinceMs = 0): Promise<{ transactions: MercurySheetTransaction[]; sheet: Record<string, unknown> }> {
