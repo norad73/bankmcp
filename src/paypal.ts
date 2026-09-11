@@ -108,26 +108,63 @@ function paypalIsoDate(d = new Date()): string {
   return d.toISOString().slice(0, 10);
 }
 
+function paypalRangeEnd(start: Date, maxEnd: Date): Date {
+  const cap = new Date(start.getTime() + 30 * 86_400_000);
+  return cap.getTime() < maxEnd.getTime() ? cap : maxEnd;
+}
+
 function toPayPalSheetDate(iso: string): string {
   const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!m) return iso;
   return `${m[2]}/${m[3]}/${m[1]}`;
 }
 
-export async function listPayPalTransactions(sinceMs = 0, pageSize = 100): Promise<PayPalTransaction[]> {
+type PayPalTransactionPage = {
+  transaction_details?: Array<{ transaction_info?: Record<string, unknown>; payer_info?: Record<string, unknown>; shipping_info?: Record<string, unknown>; cart_info?: Record<string, unknown> }>;
+  total_pages?: number;
+};
+
+async function listPayPalTransactionsInRange(start: Date, end: Date, pageSize: number): Promise<PayPalTransaction[]> {
+  const size = Math.min(pageSize, 500);
+  const rows: PayPalTransaction[] = [];
+  let page = 1;
+  let totalPages = 1;
+  do {
+    const params = new URLSearchParams({
+      start_date: `${paypalIsoDate(start)}T00:00:00Z`,
+      end_date: `${paypalIsoDate(end)}T23:59:59Z`,
+      fields: "all",
+      page_size: String(size),
+      page: String(page),
+    });
+    const data = (await paypalGet(`/v1/reporting/transactions?${params}`)) as PayPalTransactionPage;
+    rows.push(...(data.transaction_details ?? []).map(mapPayPalTransaction).filter((t): t is PayPalTransaction => Boolean(t)));
+    totalPages = Math.max(1, Number(data.total_pages ?? 1));
+    page += 1;
+  } while (page <= totalPages);
+  return rows;
+}
+
+export async function listPayPalTransactions(sinceMs = 0, pageSize = 500): Promise<PayPalTransaction[]> {
   if (!isPayPalConfigured()) return [];
   const end = new Date();
-  const start = sinceMs > 0 ? new Date(sinceMs) : new Date(end.getTime() - 31 * 86_400_000);
-  const params = new URLSearchParams({
-    start_date: `${paypalIsoDate(start)}T00:00:00Z`,
-    end_date: `${paypalIsoDate(end)}T23:59:59Z`,
-    fields: "all",
-    page_size: String(Math.min(pageSize, 500)),
-  });
-  const data = (await paypalGet(`/v1/reporting/transactions?${params}`)) as {
-    transaction_details?: Array<{ transaction_info?: Record<string, unknown>; payer_info?: Record<string, unknown>; shipping_info?: Record<string, unknown>; cart_info?: Record<string, unknown> }>;
-  };
-  return (data.transaction_details ?? []).map(mapPayPalTransaction).filter((t): t is PayPalTransaction => Boolean(t));
+  let windowStart = sinceMs > 0 ? new Date(sinceMs) : new Date(end.getTime() - 30 * 86_400_000);
+  const seen = new Set<string>();
+  const all: PayPalTransaction[] = [];
+
+  while (windowStart.getTime() <= end.getTime()) {
+    const windowEnd = paypalRangeEnd(windowStart, end);
+    const batch = await listPayPalTransactionsInRange(windowStart, windowEnd, pageSize);
+    for (const tx of batch) {
+      if (seen.has(tx.id)) continue;
+      seen.add(tx.id);
+      all.push(tx);
+    }
+    if (windowEnd.getTime() >= end.getTime()) break;
+    windowStart = new Date(windowEnd.getTime() + 86_400_000);
+  }
+
+  return all;
 }
 
 function mapPayPalTransaction(raw: {
