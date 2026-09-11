@@ -371,15 +371,16 @@ export function createApp() {
     const registerTransactionSync = (
       path: string,
       label: string,
-      handler: (sinceMs: number, knownTransactionIds: string[]) => Promise<{ transactions: unknown[]; sheet: Record<string, unknown> }>,
+      handler: (sinceMs: number, knownTransactionIds: string[], knownDateAmountKeys?: string[]) => Promise<{ transactions: unknown[]; sheet: Record<string, unknown> }>,
     ) => {
       app.post(path, express.json({ limit: "512kb" }), async (req, res) => {
         if (!cronAuth(req, res)) return;
         try {
-          const body = req.body as { sinceMs?: number; knownTransactionIds?: string[] };
+          const body = req.body as { sinceMs?: number; knownTransactionIds?: string[]; knownDateAmountKeys?: string[] };
           const sinceMs = Number(body?.sinceMs ?? 0) || 0;
           const knownTransactionIds = Array.isArray(body?.knownTransactionIds) ? body.knownTransactionIds : [];
-          const result = await handler(sinceMs, knownTransactionIds);
+          const knownDateAmountKeys = Array.isArray(body?.knownDateAmountKeys) ? body.knownDateAmountKeys : [];
+          const result = await handler(sinceMs, knownTransactionIds, knownDateAmountKeys);
           log(`${label}: ${result.transactions.length} new transaction(s)`);
           res.json({ ok: true, count: result.transactions.length, ...result.sheet });
         } catch (err) {

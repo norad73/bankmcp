@@ -80,17 +80,15 @@ function normalizeCledaraTransaction(raw: Record<string, unknown>): CledaraTrans
   if (!Number.isFinite(amount)) return null;
   const application = raw.application as { name?: string } | undefined;
   const card = raw.card as { number?: string; name?: string } | undefined;
-  const parts = [
-    card?.name,
-    application?.name,
-    raw.description,
-    card?.number ? `#${card.number}` : undefined,
-  ].filter(Boolean);
+  const appName = application?.name?.trim() || card?.name?.trim() || "";
+  const merchant = String(raw.description ?? "").trim();
+  const cardRef = card?.number ? `#${card.number}` : "";
+  const description = [appName, merchant, cardRef].filter(Boolean).join(", ");
   return {
     id,
     amount,
     currency: String(raw.currency ?? raw.localCurrency ?? "USD").toUpperCase(),
-    description: parts.join(", ") || String(raw.description ?? ""),
+    description: description || merchant,
     settledAt: typeof raw.settledAt === "string" ? raw.settledAt : undefined,
     createdAt: typeof raw.authorizedAt === "string" ? raw.authorizedAt : typeof raw.createdAt === "string" ? raw.createdAt : undefined,
     status: typeof raw.type === "string" ? raw.type : undefined,

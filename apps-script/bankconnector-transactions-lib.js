@@ -1,5 +1,5 @@
 // Shared helpers for bank transaction tabs.
-// Script version: 0.5.0
+// Script version: 0.5.5
 
 function bankConnectorFindColumnMap_(sheet, yellowHeaders, aliases) {
   aliases = aliases || {};
@@ -112,14 +112,56 @@ function bankConnectorWriteColumn_(sheet, startRow, endRow, col, transactions, p
   if (numberFormat) range.setNumberFormat(numberFormat);
 }
 
-function bankConnectorDateToMsDefault_(value) {
+function bankConnectorParseSheetDateMs_(value) {
   if (value instanceof Date) return value.getTime();
   var text = String(value || "").trim();
   if (!text) return 0;
+  var m = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) return Date.UTC(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
   var parsed = Date.parse(text);
   if (!isNaN(parsed)) return parsed;
   parsed = new Date(text).getTime();
   return isNaN(parsed) ? 0 : parsed;
+}
+
+function bankConnectorDateToMsDefault_(value) {
+  return bankConnectorParseSheetDateMs_(value);
+}
+
+function bankConnectorFindUniqueIdColumn_(sheet) {
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var idx = headers.indexOf("UniqueID");
+  return idx >= 0 ? idx + 1 : 1;
+}
+
+function bankConnectorUniqueId_(cell1, cell2, cell3, length) {
+  if (typeof UNIQUE_ID !== "function") {
+    throw new Error("UNIQUE_ID custom function not found in this Apps Script project");
+  }
+  var amount = cell3;
+  if (amount === "" || amount === null || amount === undefined) amount = 0;
+  return UNIQUE_ID(cell1, cell2, amount, length || 12);
+}
+
+function bankConnectorLoadDateAmountKeys_(sheet, dateCol, amountCol) {
+  if (!dateCol || !amountCol) return [];
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  var dates = sheet.getRange(2, dateCol, lastRow, dateCol).getValues();
+  var amounts = sheet.getRange(2, amountCol, lastRow, amountCol).getValues();
+  var keys = [];
+  for (var i = 0; i < dates.length; i++) {
+    var date = dates[i][0];
+    var dateText = date instanceof Date
+      ? Utilities.formatDate(date, "UTC", "dd/MM/yyyy")
+      : String(date || "").trim();
+    var amount = amounts[i][0];
+    if (!dateText || amount === "" || amount === null || amount === undefined) continue;
+    var num = Number(amount);
+    if (!isFinite(num)) continue;
+    keys.push(dateText + "|" + Math.round(num * 100) / 100);
+  }
+  return keys;
 }
 
 function bankConnectorMakeFillHandlers_(spec) {
@@ -149,6 +191,9 @@ function bankConnectorMakeFillHandlers_(spec) {
       var colMap = bankConnectorFindColumnMap_(sheet, spec.yellowHeaders, spec.headerAliases);
       var sinceMs = bankConnectorFindSinceMs_(sheet, colMap[spec.sinceDateField], spec.dateToMs || bankConnectorDateToMsDefault_);
       var payload = { sinceMs: sinceMs, knownTransactionIds: loadKnownIds_(sheet, colMap) };
+      if (spec.buildPayload) {
+        payload = spec.buildPayload(sheet, colMap, payload);
+      }
       var result = callBankConnector_(spec.endpoint, payload);
       try { SpreadsheetApp.getUi().alert(spec.formatAlert(result)); } catch (ignore) {}
       return result;

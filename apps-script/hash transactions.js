@@ -1,4 +1,4 @@
-function UNIQUE_ID(cell1, cell2, cell3, length = 8) {
+function UNIQUE_ID(cell1, cell2, cell3, length = 12) {
   try {
     var content = [cell1, cell2, cell3].map(function(cell) {
       return cell ? cell.toString() : "";
