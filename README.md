@@ -9,7 +9,7 @@ Pulls balances from Enable Banking (PSD2), Viva, Airwallex, Stripe, and PayPal, 
 1. Push to GitHub and connect the repo on [Render](https://render.com).
 2. Apply `render.yaml` (web service `bankconnector` + daily cron).
 3. Set env vars for each payment provider you use.
-4. Paste all `scripts/bankconnector-*.gs` files into the spreadsheet Apps Script project. Set script properties `BANKCONNECTOR_URL` and `CRON_SECRET`, deploy as web app, paste the URL into `GOOGLE_SHEETS_WEBHOOK_URL`. Use **BankConnector → Fill balances sheet** / **Fill Mercury transactions**.
+4. Apps Script is linked via [clasp](https://github.com/google/clasp): `npm run clasp:push` uploads `apps-script/` to the bound project. Set script properties `BANKCONNECTOR_URL` and `CRON_SECRET`, deploy as web app, paste the URL into `GOOGLE_SHEETS_WEBHOOK_URL`. Use **Custom Menu** for balances and transaction fills.
 5. Connect banks via `/connect?bank=Eurobank` (or Wise, etc.).
 
 ## Local
@@ -23,6 +23,19 @@ npm run dev
 - Status: http://localhost:8080
 - Balances: http://localhost:8080/balances
 - Manual sync: `npm run sync-sheets`
+
+## Apps Script (clasp)
+
+Linked to project **Bank transactions** (spreadsheet `1fpNA3NDMp11MtJXRE3hJ3VE4jCklWDDladULmlZerEc`).
+
+```bash
+clasp login          # once per machine (already done here)
+npm run clasp:push   # push apps-script/ to Google
+npm run clasp:pull   # pull remote edits into apps-script/
+npm run clasp:open   # open the script editor
+```
+
+After `clasp:push`, redeploy the web app if `doGet`/`doPost` changed.
 
 ## Enable Banking
 

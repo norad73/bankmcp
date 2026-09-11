@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      body { 
+        background-color: #121212; 
+        color: #00ff00; 
+        font-family: 'Courier New', Courier, monospace; 
+        padding: 15px; 
+        margin: 0; 
+        font-size: 13px; 
+        height: 100vh; 
+        box-sizing: border-box;
+        overflow-y: auto;
+      }
+      #logs { 
+        white-space: pre-wrap; 
+        word-wrap: break-word; 
+        line-height: 1.4;
+      }
+      .error { color: #ff5555; font-style: italic; }
+      .system { color: #888888; }
+    </style>
+  </head>
+  <body>
+    <div id="logs"><span class="system">Booting terminal... connecting to CacheService...</span></div>
+    
+    <script>
+      function fetchLogs() {
+        google.script.run
+          .withSuccessHandler(function(logs) {
+            const logDiv = document.getElementById('logs');
+            
+            // Check if user is scrolled to the bottom before updating
+            const isScrolledToBottom = Math.abs(logDiv.scrollHeight - logDiv.clientHeight - logDiv.scrollTop) < 5;
+            
+            logDiv.textContent = logs || "Waiting for script initialization...";
+            
+            // Auto-scroll only if they were already at the bottom
+            if (isScrolledToBottom) {
+              window.scrollTo(0, document.body.scrollHeight);
+            }
+          })
+          .withFailureHandler(function(error) {
+            const logDiv = document.getElementById('logs');
+            logDiv.innerHTML += `\n<span class="error">[UI Warning] Failed to fetch logs from server, retrying... (${error.message})</span>`;
+            window.scrollTo(0, document.body.scrollHeight);
+          })
+          .getLogs();
+      }
+
+      // Fetch logs every 2 seconds without fail
+      setInterval(fetchLogs, 2000);
+      
+      // Do an immediate initial fetch
+      fetchLogs(); 
+    </script>
+  </body>
+</html>

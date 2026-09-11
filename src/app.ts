@@ -23,6 +23,12 @@ import { fetchBalanceActivityReportCsv, listAirwallexFinancialTransactions } fro
 import { syncAirwallexEurTransactionsToSheet } from "./sync-airwallex-eur.ts";
 import { syncAirwallexUsdTransactionsToSheet } from "./sync-airwallex-usd.ts";
 import { syncMercuryTransactionsToSheet } from "./sync-mercury.ts";
+import { syncCledaraTransactionsToSheet } from "./sync-cledara-transactions.ts";
+import { syncEurobankBranchTransactionsToSheet } from "./sync-eurobank.ts";
+import { syncEurobankIkeTransactionsToSheet } from "./sync-eurobank-ike.ts";
+import { syncPaypalTransactionsToSheet } from "./sync-paypal-transactions.ts";
+import { syncVivaTransactionsToSheet } from "./sync-viva-transactions.ts";
+import { syncWiseEurTransactionsToSheet, syncWiseUsdTransactionsToSheet } from "./sync-wise-transactions.ts";
 
 export function createApp() {
   const log = (msg: string, extra?: unknown) => console.log(`[bank ${new Date().toISOString()}] ${msg}`, extra ?? "");
@@ -361,6 +367,35 @@ export function createApp() {
         res.status(500).json({ error: (err as Error).message });
       }
     });
+
+    const registerTransactionSync = (
+      path: string,
+      label: string,
+      handler: (sinceMs: number, knownTransactionIds: string[]) => Promise<{ transactions: unknown[]; sheet: Record<string, unknown> }>,
+    ) => {
+      app.post(path, express.json({ limit: "512kb" }), async (req, res) => {
+        if (!cronAuth(req, res)) return;
+        try {
+          const body = req.body as { sinceMs?: number; knownTransactionIds?: string[] };
+          const sinceMs = Number(body?.sinceMs ?? 0) || 0;
+          const knownTransactionIds = Array.isArray(body?.knownTransactionIds) ? body.knownTransactionIds : [];
+          const result = await handler(sinceMs, knownTransactionIds);
+          log(`${label}: ${result.transactions.length} new transaction(s)`);
+          res.json({ ok: true, count: result.transactions.length, ...result.sheet });
+        } catch (err) {
+          log(`${label} failed`, (err as Error).message);
+          res.status(500).json({ error: (err as Error).message });
+        }
+      });
+    };
+
+    registerTransactionSync("/cron/sync-cledara-transactions", "sync-cledara-transactions", syncCledaraTransactionsToSheet);
+    registerTransactionSync("/cron/sync-wise-usd-transactions", "sync-wise-usd-transactions", syncWiseUsdTransactionsToSheet);
+    registerTransactionSync("/cron/sync-wise-eur-transactions", "sync-wise-eur-transactions", syncWiseEurTransactionsToSheet);
+    registerTransactionSync("/cron/sync-paypal-transactions", "sync-paypal-transactions", syncPaypalTransactionsToSheet);
+    registerTransactionSync("/cron/sync-eurobank-transactions", "sync-eurobank-transactions", syncEurobankBranchTransactionsToSheet);
+    registerTransactionSync("/cron/sync-eurobank-ike-transactions", "sync-eurobank-ike-transactions", syncEurobankIkeTransactionsToSheet);
+    registerTransactionSync("/cron/sync-viva-transactions", "sync-viva-transactions", syncVivaTransactionsToSheet);
 
     app.post("/cron/seed-balance-cache", express.json({ limit: "4kb" }), (req, res) => {
       if (!cronAuth(req, res)) return;

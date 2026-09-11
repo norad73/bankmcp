@@ -100,3 +100,55 @@ export async function listVivaWallets(): Promise<VivaWallet[]> {
         : [data]) as Record<string, unknown>[];
   return list.map(normalizeWallet).filter((w): w is VivaWallet => Boolean(w));
 }
+
+export interface VivaAccountTransaction {
+  id: string;
+  created: string;
+  valueDate?: string;
+  description: string;
+  amount: number;
+  balance?: number;
+}
+
+async function vivaAccountGet(path: string): Promise<unknown> {
+  const res = await fetch(`${config.vivaAccountApiBase}${path}`, {
+    headers: {
+      Accept: "application/json",
+      Authorization: basicAuth(config.vivaBasicUser, config.vivaBasicPassword),
+    },
+  });
+  const text = await res.text();
+  if (!res.ok) throw new VivaError(res.status, text);
+  return text ? JSON.parse(text) : {};
+}
+
+export async function listVivaAccountTransactions(sinceMs = 0, walletId?: number): Promise<VivaAccountTransaction[]> {
+  if (!isVivaConfigured()) return [];
+  const end = new Date();
+  const start = sinceMs > 0 ? new Date(sinceMs) : new Date(end.getTime() - 120 * 86_400_000);
+  const params = new URLSearchParams({
+    date_from: start.toISOString().slice(0, 10),
+    date_to: end.toISOString().slice(0, 10),
+  });
+  if (walletId) params.set("walletId", String(walletId));
+  const data = (await vivaAccountGet(`/walletaccounts/v1/transactions?${params}`)) as
+    | Array<Record<string, unknown>>
+    | { transactions?: Array<Record<string, unknown>> };
+  const list = Array.isArray(data) ? data : (data.transactions ?? []);
+  return list.map(normalizeVivaTransaction).filter((t): t is VivaAccountTransaction => Boolean(t));
+}
+
+function normalizeVivaTransaction(raw: Record<string, unknown>): VivaAccountTransaction | null {
+  const id = String(raw.accountTransactionId ?? raw.walletTransactionId ?? raw.transactionId ?? raw.id ?? "").trim();
+  if (!id) return null;
+  const amount = Number(raw.amount ?? raw.signedAmount);
+  if (!Number.isFinite(amount)) return null;
+  return {
+    id,
+    created: String(raw.created ?? raw.createdDate ?? raw.transactionDate ?? ""),
+    valueDate: typeof raw.valueDate === "string" ? raw.valueDate : undefined,
+    description: String(raw.description ?? raw.internalDescription ?? raw.name ?? "").trim(),
+    amount,
+    balance: raw.targetAmount !== undefined ? Number(raw.targetAmount) : undefined,
+  };
+}

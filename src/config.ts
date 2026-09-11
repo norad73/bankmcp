@@ -103,6 +103,11 @@ export const config = {
   /** Mercury read-only API token (include secret-token: prefix). https://docs.mercury.com/docs/getting-started */
   mercuryApiBase: (env.MERCURY_API_BASE ?? "https://api.mercury.com/api/v1").replace(/\/+$/, ""),
   mercuryApiToken: env.MERCURY_API_TOKEN ?? "",
+  /** Cledara API token (Settings → Profile → API Keys). https://api-docs.cledara.com/ */
+  cledaraApiBase: (env.CLEDARA_API_BASE ?? "https://api.cledara.com").replace(/\/+$/, ""),
+  cledaraApiToken: env.CLEDARA_API_TOKEN ?? "",
+  /** Viva Account Transactions API base (OAuth / walletaccounts). */
+  vivaAccountApiBase: (env.VIVA_ACCOUNT_API_BASE ?? "https://api.vivapayments.com").replace(/\/+$/, ""),
   tlsCertPath: env.TLS_CERT_PATH ?? "",
   tlsKeyPath: env.TLS_KEY_PATH ?? "",
   /** True when every secret came from the environment, so the setup page has nothing to do. */

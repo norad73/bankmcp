@@ -78,6 +78,106 @@ async function paypalGet(path: string, retried = false): Promise<unknown> {
   return text ? JSON.parse(text) : {};
 }
 
+export interface PayPalTransaction {
+  id: string;
+  date: string;
+  time: string;
+  timeZone: string;
+  description: string;
+  type: string;
+  status: string;
+  currency: string;
+  gross: number;
+  fee: number;
+  net: number;
+  from: string;
+  to: string;
+  referenceTxnId: string;
+  receiptId: string;
+  addressStatus: string;
+  salesTax: string;
+  invoiceNumber: string;
+  balance: number;
+  contactPhoneNumber: string;
+  subject: string;
+  note: string;
+  balanceImpact: string;
+}
+
+function paypalIsoDate(d = new Date()): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function toPayPalSheetDate(iso: string): string {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return iso;
+  return `${m[2]}/${m[3]}/${m[1]}`;
+}
+
+export async function listPayPalTransactions(sinceMs = 0, pageSize = 100): Promise<PayPalTransaction[]> {
+  if (!isPayPalConfigured()) return [];
+  const end = new Date();
+  const start = sinceMs > 0 ? new Date(sinceMs) : new Date(end.getTime() - 31 * 86_400_000);
+  const params = new URLSearchParams({
+    start_date: `${paypalIsoDate(start)}T00:00:00Z`,
+    end_date: `${paypalIsoDate(end)}T23:59:59Z`,
+    fields: "all",
+    page_size: String(Math.min(pageSize, 500)),
+  });
+  const data = (await paypalGet(`/v1/reporting/transactions?${params}`)) as {
+    transaction_details?: Array<{ transaction_info?: Record<string, unknown>; payer_info?: Record<string, unknown>; shipping_info?: Record<string, unknown>; cart_info?: Record<string, unknown> }>;
+  };
+  return (data.transaction_details ?? []).map(mapPayPalTransaction).filter((t): t is PayPalTransaction => Boolean(t));
+}
+
+function mapPayPalTransaction(raw: {
+  transaction_info?: Record<string, unknown>;
+  payer_info?: Record<string, unknown>;
+  cart_info?: Record<string, unknown>;
+}): PayPalTransaction | null {
+  const info = raw.transaction_info ?? {};
+  const id = String(info.transaction_id ?? "").trim();
+  if (!id) return null;
+  const init = String(info.transaction_initiation_date ?? "");
+  const updated = String(info.transaction_updated_date ?? init);
+  const dt = updated || init;
+  const datePart = dt.slice(0, 10);
+  const timePart = dt.length >= 19 ? dt.slice(11, 19) : "";
+  const timeZone = dt.includes("T") ? "UTC" : "";
+  const gross = moneyValue(info.transaction_amount as { value?: string });
+  const fee = moneyValue(info.fee_amount as { value?: string });
+  const net = moneyValue((info as { transaction_amount?: { value?: string }; fee_amount?: { value?: string }; net_amount?: { value?: string } }).net_amount as { value?: string })
+    || (gross + fee);
+  const cart = raw.cart_info as { item_details?: Array<{ item_description?: string; invoice_number?: string }> } | undefined;
+  const invoiceNumber = cart?.item_details?.[0]?.invoice_number ?? "";
+  const note = String(info.transaction_note ?? cart?.item_details?.[0]?.item_description ?? "").trim();
+  return {
+    id,
+    date: toPayPalSheetDate(datePart),
+    time: timePart,
+    timeZone,
+    description: String(info.transaction_subject ?? note ?? info.paypal_reference_id ?? "").trim(),
+    type: String(info.transaction_event_code ?? info.transaction_status ?? "").trim(),
+    status: String(info.transaction_status ?? "").trim(),
+    currency: String((info.transaction_amount as { currency_code?: string } | undefined)?.currency_code ?? "USD").toUpperCase(),
+    gross,
+    fee,
+    net: moneyValue(info.transaction_amount as { value?: string }) - Math.abs(fee),
+    from: String((raw.payer_info as { email_address?: string } | undefined)?.email_address ?? info.paypal_account_id ?? "").trim(),
+    to: String(info.paypal_reference_id ?? "").trim(),
+    referenceTxnId: String(info.paypal_reference_id ?? info.bank_reference_id ?? "").trim(),
+    receiptId: String(info.receipt_id ?? "").trim(),
+    addressStatus: String((raw.payer_info as { address_status?: string } | undefined)?.address_status ?? "").trim(),
+    salesTax: String(moneyValue(info.sales_tax_amount as { value?: string }) || ""),
+    invoiceNumber,
+    balance: moneyValue(info.ending_balance as { value?: string }),
+    contactPhoneNumber: String((raw.payer_info as { phone_number?: { national_number?: string } } | undefined)?.phone_number?.national_number ?? "").trim(),
+    subject: String(info.transaction_subject ?? "").trim(),
+    note,
+    balanceImpact: gross >= 0 ? "Credit" : "Debit",
+  };
+}
+
 export async function listPayPalBalances(): Promise<PayPalBalance[]> {
   if (!isPayPalConfigured()) return [];
   const data = (await paypalGet("/v1/reporting/balances")) as {

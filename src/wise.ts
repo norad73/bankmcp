@@ -75,3 +75,80 @@ export async function listWiseBalances(): Promise<{ profileId: number; profileLa
   }));
   return { profileId: id, profileLabel: label, balances };
 }
+
+export interface WiseStatementTransaction {
+  referenceNumber: string;
+  type: string;
+  date: string;
+  amount: number;
+  currency: string;
+  totalFees: number;
+  description: string;
+  paymentReference: string;
+  runningBalance?: number;
+  exchangeFrom: string;
+  exchangeTo: string;
+  exchangeRate: string;
+  payerName: string;
+  payeeName: string;
+  payeeAccountNumber: string;
+  merchant: string;
+  exchangeToAmount: string;
+  detailsType: string;
+}
+
+function wiseMoney(raw: { value?: number | string; currency?: string } | undefined): number {
+  const n = Number(raw?.value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+export async function listWiseStatementTransactions(
+  currency: "USD" | "EUR",
+  sinceMs = 0,
+): Promise<WiseStatementTransaction[]> {
+  if (!isWiseConfigured()) return [];
+  const { profileId, balances } = await listWiseBalances();
+  const balance = balances.find((b) => b.currency === currency);
+  if (!balance) return [];
+
+  const end = new Date();
+  const start = sinceMs > 0 ? new Date(sinceMs) : new Date(end.getTime() - 120 * 86_400_000);
+  const params = new URLSearchParams({
+    currency,
+    intervalStart: start.toISOString(),
+    intervalEnd: end.toISOString(),
+    type: "COMPACT",
+  });
+  const data = await wiseGet<{ transactions?: Array<Record<string, unknown>> }>(
+    `/v1/profiles/${profileId}/balance-statements/${balance.id}/statement.json?${params}`,
+  );
+  return (data.transactions ?? []).map((raw) => mapWiseStatementTransaction(raw, currency)).filter((t): t is WiseStatementTransaction => Boolean(t));
+}
+
+function mapWiseStatementTransaction(raw: Record<string, unknown>, currency: string): WiseStatementTransaction | null {
+  const details = (raw.details as Record<string, unknown> | undefined) ?? {};
+  const exchange = (raw.exchangeDetails as Record<string, unknown> | undefined) ?? {};
+  const referenceNumber = String(details.referenceNumber ?? raw.referenceNumber ?? "").trim();
+  if (!referenceNumber) return null;
+  const date = String(raw.date ?? "");
+  return {
+    referenceNumber,
+    type: String(raw.type ?? ""),
+    date,
+    amount: wiseMoney(raw.amount as { value?: number | string }),
+    currency: String((raw.amount as { currency?: string } | undefined)?.currency ?? currency).toUpperCase(),
+    totalFees: wiseMoney(raw.totalFees as { value?: number | string }),
+    description: String(details.description ?? "").trim(),
+    paymentReference: String(details.paymentReference ?? "").trim(),
+    runningBalance: raw.runningBalance ? wiseMoney(raw.runningBalance as { value?: number | string }) : undefined,
+    exchangeFrom: String(exchange.fromCurrency ?? exchange.from ?? "").trim(),
+    exchangeTo: String(exchange.toCurrency ?? exchange.to ?? "").trim(),
+    exchangeRate: String(exchange.rate ?? "").trim(),
+    payerName: String(details.senderName ?? details.payerName ?? "").trim(),
+    payeeName: String(details.recipientName ?? details.payeeName ?? "").trim(),
+    payeeAccountNumber: String(details.recipientAccountNumber ?? details.payeeAccountNumber ?? "").trim(),
+    merchant: String(details.merchant ?? "").trim(),
+    exchangeToAmount: exchange.toAmount ? String(wiseMoney(exchange.toAmount as { value?: number | string })) : "",
+    detailsType: String(details.type ?? "").trim(),
+  };
+}
