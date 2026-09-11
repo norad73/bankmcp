@@ -1,4 +1,4 @@
-import { listVivaAccountTransactions, listVivaWallets } from "./viva.ts";
+import { isVivaAccountTransactionsConfigured, listVivaAccountTransactions, listVivaWallets } from "./viva.ts";
 import type { VivaSheetTransaction } from "./sheet-viva.ts";
 import { filterNewByKnownIds, postTransactionsToSheet } from "./sync-to-sheet.ts";
 
@@ -14,6 +14,11 @@ function txInstant(tx: VivaSheetTransaction): number {
 }
 
 export async function syncVivaTransactionsToSheet(sinceMs: number, knownIds: string[]) {
+  if (!isVivaAccountTransactionsConfigured()) {
+    throw new Error(
+      "VIVA_ACCOUNT_CLIENT_ID and VIVA_ACCOUNT_CLIENT_SECRET are not set on Render. Create them under Viva → Settings → API Access → Account Transactions credentials.",
+    );
+  }
   const known = new Set(knownIds);
   const wallets = await listVivaWallets();
   const walletId = wallets.find((w) => w.currency === "EUR")?.walletId ?? wallets[0]?.walletId;

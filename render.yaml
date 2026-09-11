@@ -26,6 +26,10 @@ services:
         sync: false
       - key: VIVA_API_KEY
         sync: false
+      - key: VIVA_ACCOUNT_CLIENT_ID
+        sync: false
+      - key: VIVA_ACCOUNT_CLIENT_SECRET
+        sync: false
       - key: AIRWALLEX_CLIENT_ID
         sync: false
       - key: AIRWALLEX_API_KEY

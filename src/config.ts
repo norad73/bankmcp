@@ -77,10 +77,14 @@ export const config = {
   get googleSheetsWebhookUrl(): string {
     return env.GOOGLE_SHEETS_WEBHOOK_URL ?? settings.google_sheets_webhook_url ?? "";
   },
-  /** Viva Wallet legacy API (Basic Auth). Use Merchant ID + API Key, or Account Transactions credentials. */
+  /** Viva Wallet legacy API (Basic Auth). Merchant ID + API Key for balances. */
   vivaApiBase: (env.VIVA_API_BASE ?? "https://www.vivapayments.com").replace(/\/+$/, ""),
   vivaBasicUser: env.VIVA_MERCHANT_ID ?? env.VIVA_BASIC_USER ?? "",
   vivaBasicPassword: env.VIVA_API_KEY ?? env.VIVA_BASIC_PASSWORD ?? "",
+  /** Viva Account Transactions OAuth (Settings → API Access → Account Transactions credentials). */
+  vivaAccountsBase: (env.VIVA_ACCOUNTS_API_BASE ?? "https://accounts.vivapayments.com").replace(/\/+$/, ""),
+  vivaAccountClientId: env.VIVA_ACCOUNT_CLIENT_ID ?? env.VIVA_CLIENT_ID ?? "",
+  vivaAccountClientSecret: env.VIVA_ACCOUNT_CLIENT_SECRET ?? env.VIVA_CLIENT_SECRET ?? "",
   /** Airwallex API (scoped key). https://www.airwallex.com/docs/developer-tools/api/manage-api-keys */
   airwallexApiBase: (env.AIRWALLEX_API_BASE ?? "https://api.airwallex.com").replace(/\/+$/, ""),
   airwallexClientId: env.AIRWALLEX_CLIENT_ID ?? "",
@@ -106,7 +110,7 @@ export const config = {
   /** Cledara API token (Settings → Profile → API Keys). https://api-docs.cledara.com/ */
   cledaraApiBase: (env.CLEDARA_API_BASE ?? "https://api.cledara.com").replace(/\/+$/, ""),
   cledaraApiToken: env.CLEDARA_API_TOKEN ?? "",
-  /** Viva Account Transactions API base (OAuth / walletaccounts). */
+  /** Viva Account API base (Bearer / walletaccounts). */
   vivaAccountApiBase: (env.VIVA_ACCOUNT_API_BASE ?? "https://api.vivapayments.com").replace(/\/+$/, ""),
   tlsCertPath: env.TLS_CERT_PATH ?? "",
   tlsKeyPath: env.TLS_KEY_PATH ?? "",
