@@ -35,7 +35,7 @@ var WISE_USD_SPEC = bankConnectorMakeFillHandlers_({
     var endRow = startRow + transactions.length - 1;
     var fields = [
       ["transferWiseId", function (tx) { return tx.transferWiseId; }],
-      ["wiseDate", function (tx) { return tx.wiseDate; }],
+      ["wiseDate", function (tx) { return tx.wiseDate; }, "@"],
       ["wiseDatetime", function (tx) { return tx.wiseDatetime; }, "@"],
       ["wiseAmount", function (tx) { return tx.wiseAmount; }],
       ["currency", function (tx) { return tx.currency; }],

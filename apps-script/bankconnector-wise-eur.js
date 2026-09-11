@@ -36,7 +36,7 @@ var WISE_EUR_SPEC = bankConnectorMakeFillHandlers_({
     var endRow = startRow + transactions.length - 1;
     var fields = [
       ["transferWiseId", function (tx) { return tx.transferWiseId; }],
-      ["originalDate", function (tx) { return tx.originalDate; }],
+      ["originalDate", function (tx) { return tx.originalDate; }, "@"],
       ["dateTime", function (tx) { return tx.dateTime; }, "@"],
       ["originalAmount", function (tx) { return tx.originalAmount; }],
       ["currency", function (tx) { return tx.currency; }],

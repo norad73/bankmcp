@@ -1,5 +1,5 @@
 // Shared helpers for bank transaction tabs.
-// Script version: 0.5.6
+// Script version: 0.5.7
 
 function bankConnectorFindColumnMap_(sheet, yellowHeaders, aliases) {
   aliases = aliases || {};
@@ -108,8 +108,8 @@ function bankConnectorWriteColumn_(sheet, startRow, endRow, col, transactions, p
     return [value];
   });
   var range = sheetRect_(sheet, startRow, col, endRow, col);
-  range.setValues(values);
   if (numberFormat) range.setNumberFormat(numberFormat);
+  range.setValues(values);
 }
 
 function bankConnectorParseSheetDateMs_(value) {
