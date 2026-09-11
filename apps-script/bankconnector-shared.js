@@ -30,6 +30,9 @@ function bankConnectorHttpHint_(code, path) {
       + "(needs v0.5.0+ for " + path + "). Push the latest code and redeploy on Render.";
   }
   if (code === 403) return "Forbidden — check CRON_SECRET and that the web app URL is correct.";
+  if (code === 502 || code === 504) {
+    return "Render timed out (30s). Large first syncs are batched — run again. If it persists, check Render logs.";
+  }
   if (code >= 500) return "Server error — check Render logs for BankConnector.";
   return "Check BANKCONNECTOR_URL and CRON_SECRET in Script properties.";
 }

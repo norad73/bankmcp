@@ -40,6 +40,8 @@ services:
         sync: false
       - key: MERCURY_API_TOKEN
         sync: false
+      - key: CLEDARA_API_TOKEN
+        sync: false
       - key: WISE_API_TOKEN
         sync: false
       - key: WISE_PROFILE_ID

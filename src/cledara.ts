@@ -21,6 +21,8 @@ export class CledaraError extends Error {
   }
 }
 
+const CLEDARA_FETCH_MS = 20_000;
+
 export function isCledaraConfigured(): boolean {
   return Boolean(config.cledaraApiToken);
 }
@@ -31,22 +33,44 @@ async function cledaraGet(path: string): Promise<unknown> {
       Accept: "application/json",
       Authorization: `Bearer ${config.cledaraApiToken}`,
     },
+    signal: AbortSignal.timeout(CLEDARA_FETCH_MS),
   });
   const text = await res.text();
   if (!res.ok) throw new CledaraError(res.status, text);
   return text ? JSON.parse(text) : {};
 }
 
-export async function listCledaraTransactions(opts: { from?: string; limit?: number } = {}): Promise<CledaraTransaction[]> {
+export async function listCledaraTransactions(opts: {
+  from?: string;
+  to?: string;
+  maxResults?: number;
+} = {}): Promise<CledaraTransaction[]> {
   if (!isCledaraConfigured()) return [];
-  const params = new URLSearchParams();
-  if (opts.from) params.set("from", opts.from);
-  if (opts.limit) params.set("limit", String(opts.limit));
-  const suffix = params.toString() ? `?${params}` : "";
-  const data = (await cledaraGet(`/v0/transactions${suffix}`)) as {
-    transactions?: Array<Record<string, unknown>>;
-  };
-  return (data.transactions ?? []).map(normalizeCledaraTransaction).filter((t): t is CledaraTransaction => Boolean(t));
+  const maxResults = opts.maxResults ?? 300;
+  const out: CledaraTransaction[] = [];
+  let offset = 0;
+
+  while (out.length < maxResults) {
+    const params = new URLSearchParams();
+    if (opts.from) params.set("from", opts.from);
+    if (opts.to) params.set("to", opts.to);
+    if (offset > 0) params.set("offset", String(offset));
+    const suffix = params.toString() ? `?${params}` : "";
+    const data = (await cledaraGet(`/v0/transactions${suffix}`)) as {
+      transactions?: Array<Record<string, unknown>>;
+      nextOffset?: number | null;
+      hasMore?: boolean;
+    };
+    const page = (data.transactions ?? [])
+      .map(normalizeCledaraTransaction)
+      .filter((t): t is CledaraTransaction => Boolean(t));
+    if (!page.length) break;
+    out.push(...page);
+    if (!data.hasMore || data.nextOffset == null) break;
+    offset = data.nextOffset;
+  }
+
+  return out.slice(0, maxResults);
 }
 
 function normalizeCledaraTransaction(raw: Record<string, unknown>): CledaraTransaction | null {
@@ -55,13 +79,12 @@ function normalizeCledaraTransaction(raw: Record<string, unknown>): CledaraTrans
   const amount = Number(raw.amount ?? raw.localAmount);
   if (!Number.isFinite(amount)) return null;
   const application = raw.application as { name?: string } | undefined;
-  const merchant = raw.merchant as { name?: string } | undefined;
-  const card = raw.card as { lastFour?: string } | undefined;
+  const card = raw.card as { number?: string; name?: string } | undefined;
   const parts = [
-    merchant?.name,
+    card?.name,
     application?.name,
     raw.description,
-    card?.lastFour ? `#${card.lastFour}` : undefined,
+    card?.number ? `#${card.number}` : undefined,
   ].filter(Boolean);
   return {
     id,
@@ -69,7 +92,7 @@ function normalizeCledaraTransaction(raw: Record<string, unknown>): CledaraTrans
     currency: String(raw.currency ?? raw.localCurrency ?? "USD").toUpperCase(),
     description: parts.join(", ") || String(raw.description ?? ""),
     settledAt: typeof raw.settledAt === "string" ? raw.settledAt : undefined,
-    createdAt: typeof raw.createdAt === "string" ? raw.createdAt : undefined,
-    status: typeof raw.status === "string" ? raw.status : undefined,
+    createdAt: typeof raw.authorizedAt === "string" ? raw.authorizedAt : typeof raw.createdAt === "string" ? raw.createdAt : undefined,
+    status: typeof raw.type === "string" ? raw.type : undefined,
   };
 }
