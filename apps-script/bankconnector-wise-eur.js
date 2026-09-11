@@ -9,6 +9,7 @@ var WISE_EUR_SPEC = bankConnectorMakeFillHandlers_({
   skipReason: "No new Wise EUR transactions",
   knownIdField: "transferWiseId",
   sinceDateField: "dateTime",
+  uniqueIdFrom: function (tx) { return [tx.dateTime, tx.description, tx.originalAmount]; },
   yellowHeaders: {
     transferWiseId: "TransferWise ID",
     originalDate: "Original Date",

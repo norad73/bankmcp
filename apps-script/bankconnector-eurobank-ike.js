@@ -9,6 +9,7 @@ var EUROBANK_IKE_SPEC = bankConnectorMakeFillHandlers_({
   skipReason: "No new Eurobank IKE transactions",
   sinceDateField: "bookingDate",
   compositeKnownFields: ["bookingDate", "description", "amount"],
+  uniqueIdFrom: function (tx) { return [tx.bookingDate, tx.description, tx.amount]; },
   yellowHeaders: {
     bookingDate: "ΗΜ/ΝΙΑ ΚINΗΣΗΣ",
     valueDate: "ΗΜ/ΝΙΑ ΑΞΙΑΣ",

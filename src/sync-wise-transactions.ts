@@ -1,37 +1,21 @@
 import { listWiseStatementTransactions } from "./wise.ts";
 import type { WiseEurSheetTransaction } from "./sheet-wise-eur.ts";
 import type { WiseUsdSheetTransaction } from "./sheet-wise-usd.ts";
+import {
+  formatWiseDateDash,
+  formatWiseDateSlash,
+  formatWiseDatetimeDash,
+  formatWiseDatetimeSlash,
+  wiseInstantMs,
+} from "./wise-dates.ts";
 import { filterNewByKnownIds, postTransactionsToSheet } from "./sync-to-sheet.ts";
-
-function wiseInstantMs(date: string): number {
-  const ms = Date.parse(date);
-  return Number.isFinite(ms) ? ms : 0;
-}
-
-function formatWiseDate(iso: string): string {
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return iso;
-  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(d.getUTCDate()).padStart(2, "0");
-  const yyyy = d.getUTCFullYear();
-  return `${mm}-${dd}-${yyyy}`;
-}
-
-function formatWiseDateSlash(iso: string): string {
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return iso;
-  const dd = String(d.getUTCDate()).padStart(2, "0");
-  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const yyyy = d.getUTCFullYear();
-  return `${dd}/${mm}/${yyyy}`;
-}
 
 function mapWiseUsd(raw: Awaited<ReturnType<typeof listWiseStatementTransactions>>[number]): WiseUsdSheetTransaction {
   return {
     id: raw.referenceNumber,
     transferWiseId: raw.referenceNumber,
-    wiseDate: formatWiseDate(raw.date),
-    wiseDatetime: raw.date.replace("T", " ").replace(/\.\d+Z$/, "").replace(/Z$/, ""),
+    wiseDate: formatWiseDateDash(raw.date),
+    wiseDatetime: formatWiseDatetimeDash(raw.date),
     wiseAmount: raw.amount,
     currency: raw.currency,
     description: raw.description,
@@ -56,7 +40,7 @@ function mapWiseEur(raw: Awaited<ReturnType<typeof listWiseStatementTransactions
     id: raw.referenceNumber,
     transferWiseId: raw.referenceNumber,
     originalDate: formatWiseDateSlash(raw.date),
-    dateTime: raw.date.replace("T", " ").replace(/\.\d+Z$/, "").replace(/Z$/, ""),
+    dateTime: formatWiseDatetimeSlash(raw.date),
     originalAmount: raw.amount,
     currency: raw.currency,
     description: raw.description,

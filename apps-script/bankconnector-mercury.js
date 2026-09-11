@@ -156,6 +156,10 @@ function copyMercuryRowFormats_(sheet, templateRow, startRow, count) {
 
 function writeMercuryRows_(sheet, startRow, colMap, transactions) {
   var endRow = startRow + transactions.length - 1;
+  var uniqueCol = bankConnectorFindUniqueIdColumn_(sheet);
+  writeMercuryColumn_(sheet, startRow, endRow, uniqueCol, transactions, function (tx) {
+    return bankConnectorUniqueId_(mercurySheetDate_(tx.dateUtc), tx.description, tx.amount, 12);
+  });
   writeMercuryColumn_(sheet, startRow, endRow, colMap.dateUtc, transactions, function (tx) {
     return mercurySheetDate_(tx.dateUtc);
   });

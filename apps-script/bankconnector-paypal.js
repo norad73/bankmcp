@@ -9,6 +9,13 @@ var PAYPAL_SPEC = bankConnectorMakeFillHandlers_({
   skipReason: "No new Paypal transactions",
   knownIdField: "transactionId",
   sinceDateField: "date",
+  uniqueIdFrom: function (tx) { return [tx.date + " " + tx.time, tx.description, tx.gross]; },
+  dateToMs: function (value) {
+    var text = String(value || "").trim();
+    var m = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (m) return Date.UTC(Number(m[3]), Number(m[1]) - 1, Number(m[2]));
+    return bankConnectorDateToMsDefault_(value);
+  },
   yellowHeaders: {
     date: "Date",
     time: "Time",

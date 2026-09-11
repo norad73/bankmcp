@@ -9,6 +9,7 @@ var VIVA_SPEC = bankConnectorMakeFillHandlers_({
   skipReason: "No new Viva transactions",
   compositeKnownFields: ["transactionDate", "description", "origAmount"],
   sinceDateField: "transactionDate",
+  uniqueIdFrom: function (tx) { return [tx.transactionDate, tx.description, tx.origAmount]; },
   yellowHeaders: {
     transactionDate: "Transaction Date",
     valueDate: "Value Date",

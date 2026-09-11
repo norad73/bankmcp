@@ -40,9 +40,11 @@ export function filterNewByKnownIds<T extends { id: string }>(
   instantMs: (row: T) => number,
   extraKeys?: (row: T) => string[],
 ): T[] {
-  return rows.filter((row) => {
-    const keys = [row.id, ...(extraKeys?.(row) ?? [])].filter(Boolean);
-    if (keys.some((key) => knownIds.has(key))) return false;
-    return sinceMs <= 0 || instantMs(row) > sinceMs;
-  });
+  return rows
+    .filter((row) => {
+      const keys = [row.id, ...(extraKeys?.(row) ?? [])].filter(Boolean);
+      if (keys.some((key) => knownIds.has(key))) return false;
+      return sinceMs <= 0 || instantMs(row) > sinceMs;
+    })
+    .sort((a, b) => instantMs(a) - instantMs(b));
 }

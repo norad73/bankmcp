@@ -1,5 +1,5 @@
 // Shared helpers for bank transaction tabs.
-// Script version: 0.5.5
+// Script version: 0.5.6
 
 function bankConnectorFindColumnMap_(sheet, yellowHeaders, aliases) {
   aliases = aliases || {};
@@ -116,8 +116,18 @@ function bankConnectorParseSheetDateMs_(value) {
   if (value instanceof Date) return value.getTime();
   var text = String(value || "").trim();
   if (!text) return 0;
-  var m = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (m) return Date.UTC(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+  var m = text.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})(?:\s(\d{1,2}):(\d{2}):(\d{2})(?:\.(\d+))?)?$/);
+  if (m) {
+    return Date.UTC(
+      Number(m[3]),
+      Number(m[2]) - 1,
+      Number(m[1]),
+      Number(m[4] || 0),
+      Number(m[5] || 0),
+      Number(m[6] || 0),
+      Number(String(m[7] || "0").slice(0, 3)),
+    );
+  }
   var parsed = Date.parse(text);
   if (!isNaN(parsed)) return parsed;
   parsed = new Date(text).getTime();
@@ -141,6 +151,26 @@ function bankConnectorUniqueId_(cell1, cell2, cell3, length) {
   var amount = cell3;
   if (amount === "" || amount === null || amount === undefined) amount = 0;
   return UNIQUE_ID(cell1, cell2, amount, length || 12);
+}
+
+function bankConnectorAugmentPayload_(sheet, colMap, payload, spec) {
+  payload = payload || { sinceMs: 0, knownTransactionIds: [] };
+  if (!spec.skipUniqueIdPayload) {
+    var uniqueCol = bankConnectorFindUniqueIdColumn_(sheet);
+    var uniqueIds = bankConnectorLoadKnownIds_(sheet, uniqueCol);
+    payload.knownTransactionIds = (payload.knownTransactionIds || []).concat(uniqueIds);
+  }
+  if (spec.buildPayload) payload = spec.buildPayload(sheet, colMap, payload);
+  return payload;
+}
+
+function bankConnectorWriteUniqueIds_(sheet, startRow, endRow, transactions, spec) {
+  if (!spec.uniqueIdFrom) return;
+  var uniqueCol = bankConnectorFindUniqueIdColumn_(sheet);
+  bankConnectorWriteColumn_(sheet, startRow, endRow, uniqueCol, transactions, function (tx) {
+    var parts = spec.uniqueIdFrom(tx);
+    return bankConnectorUniqueId_(parts[0], parts[1], parts[2], 12);
+  });
 }
 
 function bankConnectorLoadDateAmountKeys_(sheet, dateCol, amountCol) {
@@ -190,10 +220,12 @@ function bankConnectorMakeFillHandlers_(spec) {
       var sheet = getSheet_();
       var colMap = bankConnectorFindColumnMap_(sheet, spec.yellowHeaders, spec.headerAliases);
       var sinceMs = bankConnectorFindSinceMs_(sheet, colMap[spec.sinceDateField], spec.dateToMs || bankConnectorDateToMsDefault_);
-      var payload = { sinceMs: sinceMs, knownTransactionIds: loadKnownIds_(sheet, colMap) };
-      if (spec.buildPayload) {
-        payload = spec.buildPayload(sheet, colMap, payload);
-      }
+      var payload = bankConnectorAugmentPayload_(
+        sheet,
+        colMap,
+        { sinceMs: sinceMs, knownTransactionIds: loadKnownIds_(sheet, colMap) },
+        spec,
+      );
       var result = callBankConnector_(spec.endpoint, payload);
       try { SpreadsheetApp.getUi().alert(spec.formatAlert(result)); } catch (ignore) {}
       return result;
@@ -219,6 +251,8 @@ function bankConnectorMakeFillHandlers_(spec) {
     var startRow = bankConnectorFindAppendRow_(sheet);
     var templateRow = startRow > 2 ? startRow - 1 : startRow;
     bankConnectorCopyRowFormats_(sheet, templateRow, startRow, transactions.length);
+    var endRow = startRow + transactions.length - 1;
+    bankConnectorWriteUniqueIds_(sheet, startRow, endRow, transactions, spec);
     spec.writeRows(sheet, startRow, colMap, transactions);
     log_(spec.logPrefix + " impl done", { added: transactions.length, startRow: startRow });
     return {
