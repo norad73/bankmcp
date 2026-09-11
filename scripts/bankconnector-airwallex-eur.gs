@@ -1,5 +1,5 @@
 // BankConnector — append new rows on the "Airwallex EUR" transactions tab.
-// Script version: 0.4.39 (keep in sync with BankConnector app version)
+// Script version: 0.4.40 (keep in sync with BankConnector app version)
 // Requires UNIQUE_ID(datetime, description, amount, length) in the same Apps Script project.
 // Paste with bankconnector-shared.gs and bankconnector-balances.gs in the same Apps Script project.
 
@@ -290,3 +290,10 @@ function airwallexEurSheetTime_(iso) {
   // Keep BAR timestamps as text (e.g. 2026-08-25T18:15:17-0700), not Sheet date cells.
   return String(iso || "").trim();
 }
+
+registerBankConnectorModule_({
+  menuLabel: "Fill Airwallex EUR transactions",
+  menuHandler: "fillAirwallexEurTransactions",
+  action: "fill-airwallex-eur",
+  impl: fillAirwallexEurTransactionsImpl_,
+});

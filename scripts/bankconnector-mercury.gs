@@ -1,5 +1,5 @@
 // BankConnector — append new rows on the "Mercury" transactions tab.
-// Script version: 0.4.31 (keep in sync with BankConnector app version)
+// Script version: 0.4.40 (keep in sync with BankConnector app version)
 // Paste with bankconnector-shared.gs and bankconnector-balances.gs in the same Apps Script project.
 
 var MERCURY_SHEET_NAME = "Mercury";
@@ -206,4 +206,11 @@ function mercurySheetDate_(iso) {
   if (!isNaN(ms)) return new Date(ms);
   return String(iso || "");
 }
+
+registerBankConnectorModule_({
+  menuLabel: "Fill Mercury transactions",
+  menuHandler: "fillMercuryTransactions",
+  action: "fill-mercury",
+  impl: fillMercuryTransactionsImpl_,
+});
 

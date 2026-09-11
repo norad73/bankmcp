@@ -1,9 +1,8 @@
 // BankConnector — fill the "Balances" and "CC" tabs from live bank data.
-// Script version: 0.4.39 (keep in sync with BankConnector app version)
+// Script version: 0.4.40 (keep in sync with BankConnector app version)
 //
-// Setup: paste ALL bankconnector-*.gs files from scripts/ into the spreadsheet Apps Script project:
-//   bankconnector-shared.gs, bankconnector-balances.gs, bankconnector-mercury.gs,
-//   bankconnector-airwallex-usd.gs, bankconnector-airwallex-eur.gs
+// Setup: paste ALL bankconnector-*.gs files from scripts/ into the spreadsheet Apps Script project.
+// New transaction tabs register themselves — no edits needed here.
 // Then deploy a new version of the existing web app (same URL).
 
 const SHEET_NAME = "Balances";
@@ -31,20 +30,19 @@ const CC_COL = { date: 1, close: 2 };
 
 // Call this from your own onOpen() — only one onOpen() is allowed per project.
 function installBankConnectorMenu_() {
-  SpreadsheetApp.getUi()
-    .createMenu("BankConnector")
-    .addItem("Fill balances sheet", "fillBalancesSheet")
-    .addItem("Fill Mercury transactions", "fillMercuryTransactions")
-    .addItem("Fill Airwallex USD transactions", "fillAirwallexUsdTransactions")
-    .addItem("Fill Airwallex EUR transactions", "fillAirwallexEurTransactions")
-    .addToUi();
+  var menu = SpreadsheetApp.getUi().createMenu("BankConnector");
+  menu.addItem("Fill balances sheet", "fillBalancesSheet");
+  getBankConnectorModules_().forEach(function (module) {
+    menu.addItem(module.menuLabel, module.menuHandler);
+  });
+  menu.addToUi();
 }
 
 function doGet() {
   return json({
     ok: true,
     service: "BankConnector",
-    action: "Use POST { action: 'fill' | 'fill-mercury' | 'fill-airwallex-usd' | 'fill-airwallex-eur', ... } or run menu items from the sheet.",
+    action: bankConnectorActionHelp_(),
   });
 }
 
@@ -58,23 +56,14 @@ function doPost(e) {
       log_("doPost done", { action: result.action, row: result.row, cc: result.cc });
       return json(result);
     }
-    if (body.action === "fill-mercury") {
-      const result = fillMercuryTransactionsImpl_(body);
-      log_("doPost done", result);
-      return json(result);
-    }
-    if (body.action === "fill-airwallex-usd") {
-      const result = fillAirwallexUsdTransactionsImpl_(body);
-      log_("doPost done", result);
-      return json(result);
-    }
-    if (body.action === "fill-airwallex-eur") {
-      const result = fillAirwallexEurTransactionsImpl_(body);
+    const module = findBankConnectorModule_(body.action);
+    if (module) {
+      const result = module.impl(body);
       log_("doPost done", result);
       return json(result);
     }
     log_("doPost unknown action", body.action);
-    return json({ ok: false, error: "Unknown action. Use { action: 'fill' }, { action: 'fill-mercury' }, { action: 'fill-airwallex-usd' }, or { action: 'fill-airwallex-eur' }." });
+    return json({ ok: false, error: "Unknown action. " + bankConnectorActionHelp_() });
   } catch (err) {
     log_("doPost failed", { error: String(err.message || err) });
     return json({ ok: false, error: String(err.message || err) });
