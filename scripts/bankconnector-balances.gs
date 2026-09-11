@@ -1,8 +1,9 @@
 // BankConnector — fill the "Balances" and "CC" tabs from live bank data.
-// Script version: 0.4.31 (keep in sync with BankConnector app version)
+// Script version: 0.4.39 (keep in sync with BankConnector app version)
 //
 // Setup: paste ALL bankconnector-*.gs files from scripts/ into the spreadsheet Apps Script project:
-//   bankconnector-shared.gs, bankconnector-balances.gs, bankconnector-mercury.gs, bankconnector-airwallex-usd.gs
+//   bankconnector-shared.gs, bankconnector-balances.gs, bankconnector-mercury.gs,
+//   bankconnector-airwallex-usd.gs, bankconnector-airwallex-eur.gs
 // Then deploy a new version of the existing web app (same URL).
 
 const SHEET_NAME = "Balances";
@@ -35,6 +36,7 @@ function installBankConnectorMenu_() {
     .addItem("Fill balances sheet", "fillBalancesSheet")
     .addItem("Fill Mercury transactions", "fillMercuryTransactions")
     .addItem("Fill Airwallex USD transactions", "fillAirwallexUsdTransactions")
+    .addItem("Fill Airwallex EUR transactions", "fillAirwallexEurTransactions")
     .addToUi();
 }
 
@@ -42,7 +44,7 @@ function doGet() {
   return json({
     ok: true,
     service: "BankConnector",
-    action: "Use POST { action: 'fill' | 'fill-mercury' | 'fill-airwallex-usd', ... } or run menu items from the sheet.",
+    action: "Use POST { action: 'fill' | 'fill-mercury' | 'fill-airwallex-usd' | 'fill-airwallex-eur', ... } or run menu items from the sheet.",
   });
 }
 
@@ -66,8 +68,13 @@ function doPost(e) {
       log_("doPost done", result);
       return json(result);
     }
+    if (body.action === "fill-airwallex-eur") {
+      const result = fillAirwallexEurTransactionsImpl_(body);
+      log_("doPost done", result);
+      return json(result);
+    }
     log_("doPost unknown action", body.action);
-    return json({ ok: false, error: "Unknown action. Use { action: 'fill' }, { action: 'fill-mercury' }, or { action: 'fill-airwallex-usd' }." });
+    return json({ ok: false, error: "Unknown action. Use { action: 'fill' }, { action: 'fill-mercury' }, { action: 'fill-airwallex-usd' }, or { action: 'fill-airwallex-eur' }." });
   } catch (err) {
     log_("doPost failed", { error: String(err.message || err) });
     return json({ ok: false, error: String(err.message || err) });

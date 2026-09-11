@@ -20,6 +20,7 @@ import { ebLog } from "./eb-log.ts";
 import { probeEnableBankingSessions, readEbDebugLogTail, summarizeSessionCreation } from "./investigate-eb.ts";
 import { buildSheetBalancePayload } from "./sheet-balances.ts";
 import { fetchBalanceActivityReportCsv, listAirwallexFinancialTransactions } from "./airwallex.ts";
+import { syncAirwallexEurTransactionsToSheet } from "./sync-airwallex-eur.ts";
 import { syncAirwallexUsdTransactionsToSheet } from "./sync-airwallex-usd.ts";
 import { syncMercuryTransactionsToSheet } from "./sync-mercury.ts";
 
@@ -324,6 +325,26 @@ export function createApp() {
         res.json({ ok: true, count: result.transactions.length, ...result.sheet });
       } catch (err) {
         log("sync-airwallex-usd-transactions failed", (err as Error).message);
+        res.status(500).json({ error: (err as Error).message });
+      }
+    });
+
+    app.post("/cron/sync-airwallex-eur-transactions", express.json({ limit: "512kb" }), async (req, res) => {
+      if (!cronAuth(req, res)) return;
+      try {
+        const body = req.body as { sinceMs?: number; knownTransactionIds?: string[]; anchorAccountBalance?: number };
+        const sinceMs = Number(body?.sinceMs ?? 0) || 0;
+        const knownTransactionIds = Array.isArray(body?.knownTransactionIds) ? body.knownTransactionIds : undefined;
+        const anchorAccountBalance = Number(body?.anchorAccountBalance);
+        const result = await syncAirwallexEurTransactionsToSheet(
+          sinceMs,
+          knownTransactionIds,
+          Number.isFinite(anchorAccountBalance) ? anchorAccountBalance : undefined,
+        );
+        log(`sync-airwallex-eur-transactions: ${result.transactions.length} new transaction(s)`);
+        res.json({ ok: true, count: result.transactions.length, ...result.sheet });
+      } catch (err) {
+        log("sync-airwallex-eur-transactions failed", (err as Error).message);
         res.status(500).json({ error: (err as Error).message });
       }
     });

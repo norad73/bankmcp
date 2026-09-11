@@ -4,18 +4,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-test("airwallex sync store remembers transaction ids", async () => {
+test("airwallex sync store remembers transaction ids per currency", async () => {
   const dir = mkdtempSync(join(tmpdir(), "airwallex-sync-"));
   const prev = process.env.DATA_DIR;
   process.env.DATA_DIR = dir;
   try {
     const { loadAirwallexTransactionIds, rememberAirwallexTransactionIds } = await import("../src/airwallex-sync-store.ts");
-    const known = loadAirwallexTransactionIds();
-    assert.equal(known.has("abc"), false);
-    rememberAirwallexTransactionIds(["abc", "def"]);
-    const updated = loadAirwallexTransactionIds();
-    assert.equal(updated.has("abc"), true);
-    assert.equal(updated.has("xyz"), false);
+    const usd = loadAirwallexTransactionIds("USD");
+    const eur = loadAirwallexTransactionIds("EUR");
+    assert.equal(usd.has("abc"), false);
+    assert.equal(eur.has("abc"), false);
+    rememberAirwallexTransactionIds("USD", ["abc", "def"]);
+    rememberAirwallexTransactionIds("EUR", ["xyz"]);
+    assert.equal(loadAirwallexTransactionIds("USD").has("abc"), true);
+    assert.equal(loadAirwallexTransactionIds("USD").has("xyz"), false);
+    assert.equal(loadAirwallexTransactionIds("EUR").has("xyz"), true);
   } finally {
     if (prev) process.env.DATA_DIR = prev;
     else delete process.env.DATA_DIR;

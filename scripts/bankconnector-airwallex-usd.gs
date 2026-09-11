@@ -1,5 +1,5 @@
 // BankConnector — append new rows on the "Airwallex USD" transactions tab.
-// Script version: 0.4.38 (keep in sync with BankConnector app version)
+// Script version: 0.4.39 (keep in sync with BankConnector app version)
 // Requires UNIQUE_ID(datetime, description, amount, length) in the same Apps Script project.
 // Paste with bankconnector-shared.gs and bankconnector-balances.gs in the same Apps Script project.
 

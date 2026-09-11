@@ -4,11 +4,11 @@ import { parseCsv } from "../src/parse-csv.ts";
 import {
   affectsAirwallexAccountBalance,
   airwallexBalanceDelta,
-  filterNewAirwallexUsdRows,
+  filterNewAirwallexRows,
   parseBalanceActivityCsv,
   validatesAirwallexBalanceChain,
-  type AirwallexUsdSheetRow,
-} from "../src/sync-airwallex-usd.ts";
+  type AirwallexSheetRow,
+} from "../src/sync-airwallex.ts";
 
 test("parseCsv handles quoted commas", () => {
   const rows = parseCsv('a,"b,c",d\n1,2,3');
@@ -38,8 +38,8 @@ test("affectsAirwallexAccountBalance excludes reservation holds and releases", (
   assert.equal(affectsAirwallexAccountBalance({ financialTransactionType: "PAYMENT_RESERVE_HOLD" }), false);
 });
 
-test("filterNewAirwallexUsdRows skips only ids still on the sheet", () => {
-  const row = (id: string, type: string): AirwallexUsdSheetRow => ({
+test("filterNewAirwallexRows skips only ids still on the sheet", () => {
+  const row = (id: string, type: string): AirwallexSheetRow => ({
     transactionId: id,
     time: "2026-09-01T12:00:00-0700",
     type: "CARD",
@@ -62,18 +62,18 @@ test("filterNewAirwallexUsdRows skips only ids still on the sheet", () => {
     noteToSelf: "",
   });
   const rows = [row("keep-me", "CARD_PURCHASE"), row("re-add-me", "CARD_PURCHASE")];
-  const filtered = filterNewAirwallexUsdRows(rows, new Set(["keep-me"]), 0);
+  const filtered = filterNewAirwallexRows("USD", rows, new Set(["keep-me"]), 0);
   assert.deepEqual(filtered.map((r) => r.transactionId), ["re-add-me"]);
 });
 
-test("filterNewAirwallexUsdRows preserves BAR row order for same-day transactions", () => {
-  const row = (id: string, accountBalance: number): AirwallexUsdSheetRow => ({
+test("filterNewAirwallexRows preserves BAR row order for same-day transactions", () => {
+  const row = (id: string, accountBalance: number): AirwallexSheetRow => ({
     transactionId: id,
     time: "2026-09-01T12:00:00-0700",
     type: "CARD",
     financialTransactionType: "CARD_PURCHASE",
     description: "",
-    walletCurrency: "USD",
+    walletCurrency: "EUR",
     targetCurrency: "",
     targetAmount: "",
     conversionRate: "",
@@ -90,18 +90,18 @@ test("filterNewAirwallexUsdRows preserves BAR row order for same-day transaction
     noteToSelf: "",
   });
   const rows = [row("first-in-report", 100), row("second-in-report", 90)];
-  const filtered = filterNewAirwallexUsdRows(rows, new Set(), 0);
+  const filtered = filterNewAirwallexRows("EUR", rows, new Set(), 0);
   assert.deepEqual(filtered.map((r) => r.transactionId), ["first-in-report", "second-in-report"]);
 });
 
 test("validatesAirwallexBalanceChain uses debit/credit net not amount", () => {
-  const row = (id: string, debit: number, credit: number, balance: number): AirwallexUsdSheetRow => ({
+  const row = (id: string, debit: number, credit: number, balance: number): AirwallexSheetRow => ({
     transactionId: id,
     time: "2026-09-01T12:00:00-0700",
     type: "CARD",
     financialTransactionType: "CARD_PURCHASE",
     description: "",
-    walletCurrency: "USD",
+    walletCurrency: "EUR",
     targetCurrency: "",
     targetAmount: "",
     conversionRate: "",

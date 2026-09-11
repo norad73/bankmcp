@@ -1,7 +1,7 @@
 export {
   affectsAirwallexAccountBalance,
   airwallexBalanceDelta,
-  filterNewAirwallexRows as filterNewAirwallexUsdRows,
+  filterNewAirwallexRows as filterNewAirwallexEurRows,
   parseBalanceActivityCsv,
   validatesAirwallexBalanceChain,
 } from "./sync-airwallex.ts";
@@ -12,20 +12,20 @@ import {
   type AirwallexSheetRow,
 } from "./sync-airwallex.ts";
 
-export type { AirwallexSheetRow as AirwallexUsdSheetRow };
+export type { AirwallexSheetRow as AirwallexEurSheetRow };
 
-export function fetchNewAirwallexUsdTransactions(
+export function fetchNewAirwallexEurTransactions(
   sinceMs = 0,
   sheetTransactionIds?: string[],
   anchorAccountBalance?: number,
 ): Promise<AirwallexSheetRow[]> {
-  return fetchNewAirwallexTransactions("USD", sinceMs, sheetTransactionIds, anchorAccountBalance);
+  return fetchNewAirwallexTransactions("EUR", sinceMs, sheetTransactionIds, anchorAccountBalance);
 }
 
-export function syncAirwallexUsdTransactionsToSheet(
+export function syncAirwallexEurTransactionsToSheet(
   sinceMs = 0,
   sheetTransactionIds?: string[],
   anchorAccountBalance?: number,
 ): Promise<{ transactions: AirwallexSheetRow[]; sheet: Record<string, unknown> }> {
-  return syncAirwallexTransactionsToSheet("USD", sinceMs, sheetTransactionIds, anchorAccountBalance);
+  return syncAirwallexTransactionsToSheet("EUR", sinceMs, sheetTransactionIds, anchorAccountBalance);
 }
